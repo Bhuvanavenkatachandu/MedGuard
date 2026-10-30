@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { 
   LayoutDashboard, 
@@ -20,11 +21,13 @@ import {
   AlertTriangle,
   ExternalLink,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  User
 } from 'lucide-react';
 
 export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, children }) => {
-  const { pharmacy, profile, metrics, resetStore } = usePharmacy();
+  const navigate = useNavigate();
+  const { pharmacy, profile, metrics, resetStore, logoutPharmacist } = usePharmacy();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -41,6 +44,11 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
     { id: 'movements', label: 'Stock Movements Audit', icon: History },
   ];
 
+  const handleLogout = async () => {
+    await logoutPharmacist();
+    navigate('/pharmacist/login');
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
       {/* Mobile Top Header */}
@@ -49,16 +57,17 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
           <span className="text-xl">🛡️</span>
           <div>
             <h1 className="font-bold text-sm leading-tight text-white">MedGuard AI</h1>
-            <p className="text-[10px] text-slate-400 truncate max-w-[180px]">{pharmacy?.name || 'Pharmacy'}</p>
+            <p className="text-[10px] text-slate-400 truncate max-w-[150px]">{pharmacy?.name || 'Pharmacy'}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onSwitchToCustomer}
-            className="text-xs bg-blue-600 px-2 py-1 rounded text-white font-medium"
+            onClick={handleLogout}
+            className="text-xs bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white px-2 py-1 rounded border border-rose-500/40 font-medium"
+            title="Sign out of pharmacist session"
           >
-            Radar
+            Logout
           </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -144,7 +153,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
             })}
           </nav>
 
-          {/* Customer Discovery Shortcut & Demo Reset */}
+          {/* Profile Badge, Customer Discovery Shortcut & Logout */}
           <div className="pt-4 mt-4 border-t border-slate-800 space-y-2">
             <button
               onClick={onSwitchToCustomer}
@@ -157,15 +166,26 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
               <ExternalLink className="w-3 h-3 text-slate-400" />
             </button>
 
-            <div className="flex items-center justify-between px-2 pt-2 text-[11px] text-slate-500">
-              <span className="truncate">{profile?.full_name || 'Pharmacist'}</span>
+            {/* User Profile Info */}
+            <div className="bg-slate-800/50 rounded-xl p-2.5 border border-slate-800">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="overflow-hidden flex-1">
+                  <p className="text-xs font-bold text-white truncate">{profile?.full_name || 'Pharmacist'}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{pharmacy?.owner_name || 'Licensed'}</p>
+                </div>
+              </div>
+
+              {/* Explicit Visible Logout Button in Pharmacist Navigation */}
               <button
-                onClick={resetStore}
-                title="Reset demo data to default clean state"
-                className="hover:text-amber-400 flex items-center gap-1 text-[10px]"
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold py-1.5 px-3 rounded-lg transition-all"
+                title="Sign out of Supabase pharmacist session"
               >
-                <RefreshCw className="w-3 h-3" />
-                <span>Reset Demo</span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out / Logout</span>
               </button>
             </div>
           </div>
@@ -185,7 +205,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {/* Near Expiry / Low stock rapid status indicators */}
             {metrics.lowStockCount > 0 && (
               <button
@@ -213,6 +233,16 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
             >
               <span>View Public Radar</span>
               <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Desktop Header Visible Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
+              title="Sign out of Supabase pharmacist session"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-500" />
+              <span>Logout</span>
             </button>
           </div>
         </header>

@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { PharmacyProvider, usePharmacy } from './context/PharmacyContext';
 import { CustomerDiscovery } from './components/customer/CustomerDiscovery';
-import { PharmacistAuth } from './components/auth/PharmacistAuth';
+import { PharmacistLogin } from './components/auth/PharmacistLogin';
+import { PharmacistRegister } from './components/auth/PharmacistRegister';
+import { PharmacySetup } from './components/auth/PharmacySetup';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { PharmacistLayout } from './components/layout/PharmacistLayout';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { InventoryList } from './components/inventory/InventoryList';
@@ -15,90 +19,58 @@ import { InvoiceList } from './components/invoices/InvoiceList';
 import { Reports } from './components/reports/Reports';
 import { StockMovements } from './components/movements/StockMovements';
 
-const MainApp = () => {
-  // Top-level View Mode: 'customer' (public radar) or 'pharmacist' (private management)
-  const [viewMode, setViewMode] = useState('customer');
-  
-  // Pharmacist Active Tab
-  const [activeTab, setActiveTab] = useState('dashboard');
-  
-  // Auth Modal State
-  const [showAuthModal, setShowAuthModal] = useState(false);
-
-  // Pre-filled data transferred from AI Scanner to Add Stock
+/**
+ * Pharmacist Portal Shell
+ * Wraps all protected pharmacist views inside PharmacistLayout
+ */
+const PharmacistPortal = ({ activeTab }) => {
+  const navigate = useNavigate();
   const [scanPrefillData, setScanPrefillData] = useState(null);
 
-  const { profile } = usePharmacy();
-
-  // Handler for transferring AI scan results into Add Stock
-  const handleProceedToAddStock = (scannedData) => {
-    setScanPrefillData(scannedData);
-    setActiveTab('add-stock');
+  const handleTabChange = (tabId) => {
+    navigate(`/pharmacist/${tabId}`);
   };
 
-  // If in Public Customer Radar mode
-  if (viewMode === 'customer') {
-    return (
-      <CustomerDiscovery 
-        onSwitchToPharmacist={() => {
-          if (!profile) {
-            setShowAuthModal(true);
-          } else {
-            setViewMode('pharmacist');
-          }
-        }} 
-      />
-    );
-  }
+  const handleProceedToAddStock = (scannedData) => {
+    setScanPrefillData(scannedData);
+    navigate('/pharmacist/add-stock');
+  };
 
-  // If Authenticating / Registering Pharmacist
-  if (showAuthModal) {
-    return (
-      <PharmacistAuth 
-        onBackToDiscovery={() => {
-          setShowAuthModal(false);
-          setViewMode('customer');
-        }} 
-      />
-    );
-  }
-
-  // Pharmacist Portal View with Layout Shell
   return (
     <PharmacistLayout
       activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      onSwitchToCustomer={() => setViewMode('customer')}
+      setActiveTab={handleTabChange}
+      onSwitchToCustomer={() => navigate('/')}
     >
       {activeTab === 'dashboard' && (
-        <Dashboard setActiveTab={setActiveTab} />
-      )}
-
-      {activeTab === 'inventory' && (
-        <InventoryList setActiveTab={setActiveTab} />
-      )}
-
-      {activeTab === 'add-stock' && (
-        <AddStock 
-          initialData={scanPrefillData}
-          onDone={() => {
-            setScanPrefillData(null);
-            setActiveTab('inventory');
-          }}
-          onGoToScanner={() => setActiveTab('ai-scanner')}
-        />
-      )}
-
-      {activeTab === 'ai-scanner' && (
-        <AiScanner onProceedToAddStock={handleProceedToAddStock} />
+        <Dashboard setActiveTab={handleTabChange} />
       )}
 
       {activeTab === 'pos' && (
         <PointOfSale />
       )}
 
+      {activeTab === 'inventory' && (
+        <InventoryList setActiveTab={handleTabChange} />
+      )}
+
+      {activeTab === 'ai-scanner' && (
+        <AiScanner onProceedToAddStock={handleProceedToAddStock} />
+      )}
+
+      {activeTab === 'add-stock' && (
+        <AddStock
+          initialData={scanPrefillData}
+          onDone={() => {
+            setScanPrefillData(null);
+            navigate('/pharmacist/inventory');
+          }}
+          onGoToScanner={() => navigate('/pharmacist/ai-scanner')}
+        />
+      )}
+
       {activeTab === 'expiry' && (
-        <ExpiryManagement setActiveTab={setActiveTab} />
+        <ExpiryManagement setActiveTab={handleTabChange} />
       )}
 
       {activeTab === 'customers' && (
@@ -127,7 +99,120 @@ const MainApp = () => {
 export default function App() {
   return (
     <PharmacyProvider>
-      <MainApp />
+      <BrowserRouter>
+        <Routes>
+          {/* Public Customer Route (Zero Login Required) */}
+          <Route path="/" element={<CustomerDiscovery />} />
+
+          {/* Pharmacist Authentication Routes */}
+          <Route path="/pharmacist/login" element={<PharmacistLogin />} />
+          <Route path="/pharmacist/register" element={<PharmacistRegister />} />
+
+          {/* Step 2 & 3: Pharmacy Details & Location Setup (Protected) */}
+          <Route
+            path="/pharmacist/setup"
+            element={
+              <ProtectedRoute>
+                <PharmacySetup />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Pharmacist Operations */}
+          <Route
+            path="/pharmacist/dashboard"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="dashboard" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/pos"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="pos" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/inventory"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="inventory" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/ai-scanner"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="ai-scanner" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/add-stock"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="add-stock" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/expiry"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="expiry" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/customers"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="customers" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/suppliers"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="suppliers" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/invoices"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="invoices" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/reports"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="reports" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/movements"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="movements" />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Redirects */}
+          <Route path="/pharmacist" element={<Navigate to="/pharmacist/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </PharmacyProvider>
   );
 }

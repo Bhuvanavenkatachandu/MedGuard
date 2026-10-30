@@ -3,9 +3,12 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getLocalStore, saveLocalStore, resetLocalStore } from '../lib/mockStore';
 import { generateInvoicePdf, uploadInvoicePdf } from '../utils/pdfGenerator';
 
+const DEMO_AUTH_KEY = 'medguard_demo_auth_session';
+
 const PharmacyContext = createContext(null);
 
 export const PharmacyProvider = ({ children }) => {
+  const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [pharmacy, setPharmacy] = useState(null);
@@ -25,34 +28,82 @@ export const PharmacyProvider = ({ children }) => {
   // Load initial state
   useEffect(() => {
     initApp();
+
+    if (isSupabaseConfigured) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+        setSession(newSession);
+        setUser(newSession?.user || null);
+        if (newSession?.user) {
+          await loadSupabaseData(newSession.user.id);
+        } else {
+          setProfile(null);
+          setPharmacy(null);
+          loadPublicCatalog();
+        }
+      });
+
+      return () => {
+        subscription?.unsubscribe();
+      };
+    }
   }, []);
 
   const initApp = async () => {
     setLoading(true);
     try {
       if (isSupabaseConfigured) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUser(session.user);
-          await loadSupabaseData(session.user.id);
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        if (currentSession?.user) {
+          setUser(currentSession.user);
+          await loadSupabaseData(currentSession.user.id);
         } else {
-          // Fallback to local demo store so user can explore immediately
-          loadLocalData();
+          setUser(null);
+          setProfile(null);
+          setPharmacy(null);
+          await loadPublicCatalog();
         }
       } else {
-        loadLocalData();
+        // Check local demo auth session
+        const demoAuthRaw = localStorage.getItem(DEMO_AUTH_KEY);
+        const store = getLocalStore();
+
+        if (demoAuthRaw) {
+          try {
+            const demoAuth = JSON.parse(demoAuthRaw);
+            setUser(demoAuth.user);
+            setProfile(demoAuth.profile);
+            if (demoAuth.profile?.pharmacy_id) {
+              setPharmacy(store.pharmacy);
+              loadLocalCollections(store);
+            } else {
+              setPharmacy(null);
+              loadLocalCollections(store);
+            }
+          } catch (e) {
+            setUser(null);
+            setProfile(null);
+            setPharmacy(null);
+            loadLocalCollections(store);
+          }
+        } else {
+          // Unauthenticated customer discovery by default
+          setUser(null);
+          setProfile(null);
+          setPharmacy(null);
+          loadLocalCollections(store);
+        }
       }
     } catch (err) {
-      console.warn('Initialization using local demo store due to:', err);
-      loadLocalData();
+      console.warn('Initialization notice:', err);
+      const store = getLocalStore();
+      loadLocalCollections(store);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadLocalData = () => {
-    const store = getLocalStore();
-    setPharmacy(store.pharmacy);
+  const loadLocalCollections = (store) => {
     setMedicines(store.medicines || []);
     setBatches(store.batches || []);
     setInventory(store.inventory || []);
@@ -62,19 +113,33 @@ export const PharmacyProvider = ({ children }) => {
     setInvoices(store.invoices || []);
     setStockMovements(store.stock_movements || []);
     setEmailLogs(store.email_logs || []);
-    
-    // Set a default demo profile for pharmacist
-    setProfile({
-      id: 'demo-user-1',
-      full_name: 'Dr. Rajesh Sharma',
-      role: 'pharmacist',
-    });
+  };
+
+  const loadPublicCatalog = async () => {
+    try {
+      const [
+        { data: meds },
+        { data: bts },
+        { data: invs },
+      ] = await Promise.all([
+        supabase.from('medicines').select('*'),
+        supabase.from('batches').select('*'),
+        supabase.from('inventory').select('*'),
+      ]);
+
+      if (meds) setMedicines(meds);
+      if (bts) setBatches(bts);
+      if (invs) setInventory(invs);
+    } catch (e) {
+      const store = getLocalStore();
+      loadLocalCollections(store);
+    }
   };
 
   const loadSupabaseData = async (userId) => {
     try {
-      // 1. Load profile & pharmacy
-      const { data: prof } = await supabase
+      // 1. Load profile & linked pharmacy
+      const { data: prof, error: profErr } = await supabase
         .from('profiles')
         .select('*, pharmacies(*)')
         .eq('id', userId)
@@ -82,8 +147,10 @@ export const PharmacyProvider = ({ children }) => {
 
       if (prof) {
         setProfile(prof);
-        if (prof.pharmacies) {
+        if (prof.pharmacy_id && prof.pharmacies) {
           setPharmacy(prof.pharmacies);
+        } else {
+          setPharmacy(null);
         }
       }
 
@@ -117,8 +184,7 @@ export const PharmacyProvider = ({ children }) => {
       if (invcs) setInvoices(invcs);
       if (movs) setStockMovements(movs);
     } catch (err) {
-      console.error('Error loading Supabase data, falling back to local store:', err);
-      loadLocalData();
+      console.error('Error loading Supabase data:', err);
     }
   };
 
@@ -141,11 +207,270 @@ export const PharmacyProvider = ({ children }) => {
   };
 
   // ==========================================
+  // AUTHENTICATION FLOWS (SUPABASE AUTH)
+  // ==========================================
+  
+  /**
+   * Step 1: Create Account
+   * Registers user with Supabase Auth.
+   * Does NOT set pharmacy_id. Sends user to Step 2 (Pharmacy Setup).
+   */
+  const registerPharmacist = async ({ fullName, email, phone, password }) => {
+    if (!fullName || !email || !password) {
+      throw new Error('Please fill in all required fields.');
+    }
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone: phone || '',
+          }
+        }
+      });
+      if (error) throw error;
+
+      if (data.user) {
+        setUser(data.user);
+        // Create initial profile without pharmacy_id (setup incomplete!)
+        const { data: profData } = await supabase
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            full_name: fullName,
+            phone: phone || '',
+            role: 'pharmacist',
+            pharmacy_id: null,
+          })
+          .select()
+          .single();
+
+        setProfile(profData || { id: data.user.id, full_name: fullName, phone, role: 'pharmacist', pharmacy_id: null });
+        setPharmacy(null);
+        return { success: true, user: data.user };
+      }
+      return { success: true };
+    } else {
+      // Demo registration
+      const demoUser = {
+        id: `demo-user-${Date.now()}`,
+        email,
+      };
+      const demoProfile = {
+        id: demoUser.id,
+        full_name: fullName,
+        phone,
+        role: 'pharmacist',
+        pharmacy_id: null, // Setup incomplete!
+      };
+
+      const demoAuthSession = {
+        user: demoUser,
+        profile: demoProfile,
+      };
+      localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoAuthSession));
+
+      setUser(demoUser);
+      setProfile(demoProfile);
+      setPharmacy(null);
+      return { success: true, user: demoUser };
+    }
+  };
+
+  /**
+   * Step 2, 3 & 4: Pharmacy Setup & Location Confirmation
+   * Creates the pharmacy and atomically associates it with the logged-in user.
+   * Frontend CANNOT choose an arbitrary pharmacy_id.
+   */
+  const setupPharmacy = async ({
+    name,
+    ownerName,
+    phone,
+    email,
+    address,
+    city,
+    state,
+    pincode,
+    licenseNumber,
+    latitude,
+    longitude,
+  }) => {
+    if (!name || !ownerName || !address || latitude === undefined || longitude === undefined) {
+      throw new Error('Please provide all pharmacy details and confirm physical location.');
+    }
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('create_pharmacy_for_pharmacist', {
+        p_name: name,
+        p_owner_name: ownerName,
+        p_phone: phone || 'N/A',
+        p_email: email || '',
+        p_address: address,
+        p_city: city || '',
+        p_state: state || '',
+        p_pincode: pincode || '',
+        p_license_number: licenseNumber || '',
+        p_latitude: parseFloat(latitude),
+        p_longitude: parseFloat(longitude),
+      });
+
+      if (error) throw error;
+
+      if (user?.id) {
+        await loadSupabaseData(user.id);
+      }
+      return { success: true, pharmacyId: data?.pharmacy_id };
+    } else {
+      // Demo pharmacy setup
+      const newPharmacy = {
+        id: `ph-${Date.now()}`,
+        name,
+        owner_name: ownerName,
+        phone: phone || '+91 98765 43210',
+        email: email || '',
+        address,
+        city: city || 'Bengaluru',
+        state: state || 'Karnataka',
+        pincode: pincode || '560038',
+        license_number: licenseNumber || 'DL-KA-2026-99999',
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        near_expiry_threshold_days: 30,
+      };
+
+      const updatedProfile = {
+        ...profile,
+        pharmacy_id: newPharmacy.id,
+      };
+
+      const demoAuthSession = {
+        user,
+        profile: updatedProfile,
+      };
+      localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoAuthSession));
+
+      const store = getLocalStore();
+      store.pharmacy = newPharmacy;
+      store.pharmacies = [newPharmacy, ...(store.pharmacies || [])];
+      saveLocalStore(store);
+
+      setPharmacy(newPharmacy);
+      setProfile(updatedProfile);
+      loadLocalCollections(store);
+      return { success: true, pharmacyId: newPharmacy.id };
+    }
+  };
+
+  /**
+   * Pharmacist Login
+   * Uses Supabase Auth.
+   * If setup incomplete -> returns isSetupComplete: false
+   */
+  const loginPharmacist = async (email, password) => {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+
+      setUser(data.user);
+      setSession(data.session);
+
+      // Check profile & pharmacy setup
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('*, pharmacies(*)')
+        .eq('id', data.user.id)
+        .single();
+
+      if (prof) {
+        setProfile(prof);
+        if (prof.pharmacy_id && prof.pharmacies) {
+          setPharmacy(prof.pharmacies);
+          await loadSupabaseData(data.user.id);
+          return { success: true, isSetupComplete: true };
+        } else {
+          setPharmacy(null);
+          return { success: true, isSetupComplete: false };
+        }
+      }
+      return { success: true, isSetupComplete: false };
+    } else {
+      // Demo login
+      const store = getLocalStore();
+      const demoUser = { id: 'demo-user-1', email };
+      const demoProfile = {
+        id: demoUser.id,
+        full_name: store.pharmacy?.owner_name || 'Dr. Rajesh Sharma',
+        role: 'pharmacist',
+        pharmacy_id: store.pharmacy?.id || 'ph-001',
+      };
+      const demoAuthSession = {
+        user: demoUser,
+        profile: demoProfile,
+      };
+      localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoAuthSession));
+
+      setUser(demoUser);
+      setProfile(demoProfile);
+      setPharmacy(store.pharmacy);
+      loadLocalCollections(store);
+      return { success: true, isSetupComplete: true };
+    }
+  };
+
+  /**
+   * 1-Click Instant Demo Login for reviewers
+   */
+  const loginWithDemoSession = () => {
+    const store = getLocalStore();
+    const demoUser = { id: 'demo-user-1', email: 'pharmacist@apollo.io' };
+    const demoProfile = {
+      id: demoUser.id,
+      full_name: 'Dr. Rajesh Sharma',
+      role: 'pharmacist',
+      pharmacy_id: store.pharmacy?.id || 'ph-001',
+    };
+    const demoAuthSession = {
+      user: demoUser,
+      profile: demoProfile,
+    };
+    localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(demoAuthSession));
+
+    setUser(demoUser);
+    setProfile(demoProfile);
+    setPharmacy(store.pharmacy);
+    loadLocalCollections(store);
+    return { success: true, isSetupComplete: true };
+  };
+
+  /**
+   * Logout
+   */
+  const logoutPharmacist = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
+    localStorage.removeItem(DEMO_AUTH_KEY);
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setPharmacy(null);
+  };
+
+  // Auth indicators
+  const isAuthenticated = Boolean(user);
+  const isSetupComplete = Boolean(user && profile && pharmacy && pharmacy.id && profile.pharmacy_id);
+
+  // ==========================================
   // CUSTOMER LOOKUP & NORMALIZATION
   // ==========================================
   const normalizePhone = (rawPhone) => {
     if (!rawPhone) return '';
-    // Strip non-digits and leading +91 or 0
     let cleaned = rawPhone.toString().replace(/\D/g, '');
     if (cleaned.startsWith('91') && cleaned.length === 12) {
       cleaned = cleaned.substring(2);
@@ -165,7 +490,6 @@ export const PharmacyProvider = ({ children }) => {
     const normPhone = normalizePhone(phone);
     const existing = customers.find(c => normalizePhone(c.phone) === normPhone);
     if (existing) {
-      // Update email if provided
       if (email && email !== existing.email) {
         const updated = { ...existing, email };
         const nextCustomers = customers.map(c => c.id === existing.id ? updated : c);
@@ -228,7 +552,6 @@ export const PharmacyProvider = ({ children }) => {
       ? Number(price_per_piece) 
       : (Number(price_per_strip) / pPerStrip);
 
-    // 1. Find or create Medicine
     let medicine = medicines.find(
       m => m.name.toLowerCase() === medicine_name.toLowerCase() && 
            (!strength || (m.strength || '').toLowerCase() === strength.toLowerCase())
@@ -252,7 +575,6 @@ export const PharmacyProvider = ({ children }) => {
       setMedicines(nextMedicines);
     }
 
-    // 2. Find or create Batch
     let batch = batches.find(
       b => b.medicine_id === medicine.id && b.batch_number.toUpperCase() === batch_number.trim().toUpperCase()
     );
@@ -273,7 +595,6 @@ export const PharmacyProvider = ({ children }) => {
       setBatches(nextBatches);
     }
 
-    // 3. Find or update Inventory
     let existingInv = inventory.find(i => i.batch_id === batch.id);
     let nextInventory = [...inventory];
     let balanceAfter = totalPiecesToAdd;
@@ -305,7 +626,6 @@ export const PharmacyProvider = ({ children }) => {
     }
     setInventory(nextInventory);
 
-    // 4. Record stock movement
     const newMovement = {
       id: `sm-${Date.now()}`,
       pharmacy_id: pharmacy?.id || 'ph-001',
@@ -322,7 +642,6 @@ export const PharmacyProvider = ({ children }) => {
     const nextMovements = [newMovement, ...stockMovements];
     setStockMovements(nextMovements);
 
-    // Persist to store
     syncLocalStore({
       medicines: nextMedicines,
       batches: nextBatches,
@@ -344,7 +663,7 @@ export const PharmacyProvider = ({ children }) => {
   const processSale = async ({
     customer_id,
     customer_data,
-    items, // array of { medicine_id, batch_id, unit_type, quantity_units, pieces_count, unit_price, total_price, medicine_name, batch_number }
+    items,
     subtotal,
     discount_amount = 0,
     tax_amount = 0,
@@ -352,7 +671,6 @@ export const PharmacyProvider = ({ children }) => {
     payment_method = 'Cash',
     notes = '',
   }) => {
-    // 1. Resolve customer
     let cust = null;
     if (customer_id) {
       cust = customers.find(c => c.id === customer_id);
@@ -360,7 +678,6 @@ export const PharmacyProvider = ({ children }) => {
       cust = await getOrCreateCustomer(customer_data);
     }
 
-    // 2. Validate all stock and expiry before sale
     const today = new Date().toISOString().split('T')[0];
     for (const item of items) {
       const b = batches.find(x => x.id === item.batch_id);
@@ -377,7 +694,6 @@ export const PharmacyProvider = ({ children }) => {
     const saleNumber = `SALE-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10000 + Math.random() * 90000)}`;
     const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    // 3. Atomically update inventory & record movements
     let nextInventory = [...inventory];
     const newMovements = [];
 
@@ -406,7 +722,6 @@ export const PharmacyProvider = ({ children }) => {
       }
     }
 
-    // 4. Create Sale Record
     const newSale = {
       id: `sale-${Date.now()}`,
       pharmacy_id: pharmacy?.id || 'ph-001',
@@ -426,7 +741,6 @@ export const PharmacyProvider = ({ children }) => {
       created_at: new Date().toISOString(),
     };
 
-    // 5. Create Initial Invoice Record
     const newInvoice = {
       id: `inv-rec-${Date.now()}`,
       pharmacy_id: pharmacy?.id || 'ph-001',
@@ -457,7 +771,6 @@ export const PharmacyProvider = ({ children }) => {
       stock_movements: nextMovements,
     });
 
-    // 6. Generate PDF Invoice & Attempt Background Email
     let pdfResult = null;
     let emailStatus = 'pending';
     let emailErrorMessage = null;
@@ -470,7 +783,6 @@ export const PharmacyProvider = ({ children }) => {
         items,
       });
 
-      // Upload PDF to Supabase Storage if configured
       if (pdfResult.blob) {
         const uploadRes = await uploadInvoicePdf(pdfResult.blob, invoiceNumber);
         if (uploadRes.success && uploadRes.publicUrl) {
@@ -481,7 +793,6 @@ export const PharmacyProvider = ({ children }) => {
       console.warn('PDF generation notice:', pdfErr);
     }
 
-    // 7. Dispatch Email via Supabase Edge Function if customer has email
     if (cust?.email && cust.email.includes('@')) {
       try {
         const emailRes = await triggerEmailInvoice({
@@ -512,7 +823,6 @@ export const PharmacyProvider = ({ children }) => {
         newInvoice.status = 'email_failed';
       }
 
-      // Log email attempt
       const newEmailLog = {
         id: `el-${Date.now()}`,
         pharmacy_id: pharmacy?.id || 'ph-001',
@@ -525,7 +835,6 @@ export const PharmacyProvider = ({ children }) => {
       setEmailLogs(prev => [newEmailLog, ...prev]);
     }
 
-    // Save final updated invoice status
     setInvoices(prev => prev.map(inv => inv.id === newInvoice.id ? newInvoice : inv));
     syncLocalStore();
 
@@ -539,13 +848,8 @@ export const PharmacyProvider = ({ children }) => {
     };
   };
 
-  // ==========================================
-  // EMAIL DISPATCH VIA EDGE FUNCTION
-  // ==========================================
   const triggerEmailInvoice = async (invoicePayload) => {
     if (!isSupabaseConfigured) {
-      console.info('Mock mode: simulating email sent via Resend Edge Function to', invoicePayload.recipient_email);
-      // Simulate success in demo mode
       return { success: true, status: 'sent', resend_id: 're_mock_sample' };
     }
 
@@ -559,10 +863,8 @@ export const PharmacyProvider = ({ children }) => {
         body: JSON.stringify(invoicePayload),
       });
 
-      const resData = await response.json();
-      return resData;
+      return await response.json();
     } catch (err) {
-      console.error('Edge Function send-invoice network error:', err);
       return { success: false, error: err.message };
     }
   };
@@ -607,9 +909,6 @@ export const PharmacyProvider = ({ children }) => {
     return emailRes;
   };
 
-  // ==========================================
-  // SUPPLIERS
-  // ==========================================
   const addSupplier = (supplierData) => {
     const newSupplier = {
       id: `sup-${Date.now()}`,
@@ -623,9 +922,6 @@ export const PharmacyProvider = ({ children }) => {
     return newSupplier;
   };
 
-  // ==========================================
-  // STOCK ADJUSTMENT & EXPIRED REMOVAL
-  // ==========================================
   const adjustStock = (inventoryId, newPiecesCount, reason = 'Inventory audit') => {
     const inv = inventory.find(i => i.id === inventoryId);
     if (!inv) return;
@@ -684,21 +980,17 @@ export const PharmacyProvider = ({ children }) => {
     syncLocalStore({ inventory: nextInv, stock_movements: nextMovs });
   };
 
-  // ==========================================
-  // REAL-TIME COMPUTED METRICS & ALERTS
-  // ==========================================
+  // Metrics
   const todayStr = new Date().toISOString().split('T')[0];
   const thresholdDays = pharmacy?.near_expiry_threshold_days || 30;
 
   const totalSalesAmount = sales.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
-  
   const todaySalesAmount = sales
     .filter(s => s.created_at?.startsWith(todayStr))
     .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
 
   const totalStockPieces = inventory.reduce((acc, i) => acc + Number(i.total_pieces || 0), 0);
 
-  // Expiry groupings
   const todayDate = new Date();
   const thresholdDate = new Date();
   thresholdDate.setDate(thresholdDate.getDate() + thresholdDays);
@@ -733,7 +1025,6 @@ export const PharmacyProvider = ({ children }) => {
     }
   });
 
-  // Low Stock Items
   const lowStockItems = inventory
     .filter(i => i.total_pieces > 0 && i.total_pieces <= (i.min_stock_pieces || 20))
     .map(i => {
@@ -753,11 +1044,21 @@ export const PharmacyProvider = ({ children }) => {
   return (
     <PharmacyContext.Provider
       value={{
+        session,
         user,
         profile,
         pharmacy,
         setPharmacy,
         loading,
+        isAuthenticated,
+        isSetupComplete,
+        // Auth Methods
+        registerPharmacist,
+        setupPharmacy,
+        loginPharmacist,
+        loginWithDemoSession,
+        logoutPharmacist,
+        // Entities
         medicines,
         batches,
         inventory,
@@ -778,8 +1079,8 @@ export const PharmacyProvider = ({ children }) => {
         adjustStock,
         markBatchExpired,
         resetStore: () => {
-          const fresh = resetLocalStore();
-          loadLocalData();
+          resetLocalStore();
+          initApp();
         },
         // Metrics
         metrics: {

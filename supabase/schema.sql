@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS public.pharmacies (
     phone TEXT NOT NULL,
     email TEXT,
     address TEXT NOT NULL,
+    city TEXT,
+    state TEXT,
+    pincode TEXT,
     latitude NUMERIC(10, 7) NOT NULL,
     longitude NUMERIC(10, 7) NOT NULL,
     license_number TEXT,
@@ -238,6 +241,80 @@ CREATE TABLE IF NOT EXISTS public.email_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_logs_invoice ON public.email_logs (invoice_id);
+
+
+-- ==============================================================================
+-- SECURE PHARMACY CREATION & ASSOCIATION RPC FUNCTION: create_pharmacy_for_pharmacist
+-- Creates a pharmacy and atomically links it to the authenticated user's profile
+-- The frontend CANNOT specify an arbitrary pharmacy_id.
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION public.create_pharmacy_for_pharmacist(
+    p_name TEXT,
+    p_owner_name TEXT,
+    p_phone TEXT,
+    p_email TEXT,
+    p_address TEXT,
+    p_city TEXT,
+    p_state TEXT,
+    p_pincode TEXT,
+    p_license_number TEXT,
+    p_latitude NUMERIC,
+    p_longitude NUMERIC
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_pharmacy_id UUID;
+    v_user_id UUID;
+BEGIN
+    v_user_id := auth.uid();
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required to create and link pharmacy.';
+    END IF;
+
+    -- Insert new pharmacy
+    INSERT INTO public.pharmacies (
+        name,
+        owner_name,
+        phone,
+        email,
+        address,
+        city,
+        state,
+        pincode,
+        license_number,
+        latitude,
+        longitude
+    ) VALUES (
+        p_name,
+        p_owner_name,
+        p_phone,
+        p_email,
+        p_address,
+        p_city,
+        p_state,
+        p_pincode,
+        p_license_number,
+        p_latitude,
+        p_longitude
+    ) RETURNING id INTO v_pharmacy_id;
+
+    -- Ensure profile exists and associate with newly created pharmacy
+    INSERT INTO public.profiles (id, pharmacy_id, full_name, phone, role)
+    VALUES (v_user_id, v_pharmacy_id, p_owner_name, p_phone, 'pharmacist')
+    ON CONFLICT (id) DO UPDATE
+    SET pharmacy_id = v_pharmacy_id,
+        updated_at = timezone('utc'::text, now());
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'pharmacy_id', v_pharmacy_id
+    );
+END;
+$$;
 
 
 -- ==============================================================================

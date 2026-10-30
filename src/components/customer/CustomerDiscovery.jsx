@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, 
   MapPin, 
@@ -19,6 +20,7 @@ import { usePharmacy } from '../../context/PharmacyContext';
 import { getLocalStore } from '../../lib/mockStore';
 
 export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
+  const navigate = useNavigate();
   const { medicines, inventory, batches } = usePharmacy();
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -182,7 +184,10 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
             </div>
 
             <button
-              onClick={onSwitchToPharmacist}
+              onClick={() => {
+                if (onSwitchToPharmacist) onSwitchToPharmacist();
+                else navigate('/pharmacist/dashboard');
+              }}
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-3.5 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5"
             >
               <span>Pharmacist Portal</span>
