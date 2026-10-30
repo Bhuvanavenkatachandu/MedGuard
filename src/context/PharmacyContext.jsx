@@ -649,6 +649,61 @@ export const PharmacyProvider = ({ children }) => {
       stock_movements: nextMovements,
     });
 
+    // Live Supabase Sync
+    if (isSupabaseConfigured && user && pharmacy?.id) {
+      try {
+        const { data: dbMed } = await supabase.from('medicines').upsert({
+          pharmacy_id: pharmacy.id,
+          name: medicine_name,
+          generic_name: generic_name || '',
+          brand: brand || '',
+          strength: strength || '',
+          category: category || 'General',
+          manufacturer: manufacturer || '',
+          pieces_per_strip: pPerStrip,
+          unit_of_measure: 'tablet',
+        }, { onConflict: 'pharmacy_id,name,strength' }).select().single();
+
+        const medId = dbMed?.id || medicine.id;
+
+        const { data: dbBatch } = await supabase.from('batches').upsert({
+          pharmacy_id: pharmacy.id,
+          medicine_id: medId,
+          supplier_id: supplier_id || null,
+          batch_number: batch_number.trim().toUpperCase(),
+          manufacturing_date: manufacturing_date || null,
+          expiry_date: expiry_date,
+          mrp_per_strip: Number(price_per_strip) || 0,
+        }, { onConflict: 'pharmacy_id,medicine_id,batch_number' }).select().single();
+
+        const batchId = dbBatch?.id || batch.id;
+
+        await supabase.from('inventory').upsert({
+          pharmacy_id: pharmacy.id,
+          medicine_id: medId,
+          batch_id: batchId,
+          pieces_per_strip: pPerStrip,
+          total_pieces: balanceAfter,
+          price_per_strip: Number(price_per_strip) || 0,
+          price_per_piece: pPerPieceCalc,
+          min_stock_pieces: min_stock_pieces !== undefined ? Number(min_stock_pieces) : 20,
+        }, { onConflict: 'pharmacy_id,batch_id' });
+
+        await supabase.from('stock_movements').insert({
+          pharmacy_id: pharmacy.id,
+          medicine_id: medId,
+          batch_id: batchId,
+          movement_type: 'stock_added',
+          pieces_quantity: totalPiecesToAdd,
+          balance_after: balanceAfter,
+          reference_id: `INWARD-${batch_number}`,
+          notes: `Inward stock received: ${stripsCount} strip(s) (${totalPiecesToAdd} pieces)`,
+        });
+      } catch (e) {
+        console.warn('Supabase addStock sync notice:', e);
+      }
+    }
+
     return {
       success: true,
       medicine,
@@ -770,6 +825,43 @@ export const PharmacyProvider = ({ children }) => {
       invoices: nextInvoices,
       stock_movements: nextMovements,
     });
+
+    // Live Supabase Atomic Sale Execution
+    if (isSupabaseConfigured && user && pharmacy?.id) {
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('process_sale', {
+          p_pharmacy_id: pharmacy.id,
+          p_customer_id: cust?.id || null,
+          p_pharmacist_id: profile?.id || user.id,
+          p_items: items.map(it => ({
+            medicine_id: it.medicine_id,
+            batch_id: it.batch_id,
+            unit_type: it.unit_type,
+            quantity_units: it.quantity_units,
+            pieces_count: it.pieces_count,
+            unit_price: it.unit_price,
+            total_price: it.total_price,
+          })),
+          p_subtotal: Number(subtotal),
+          p_discount: Number(discount_amount),
+          p_tax: Number(tax_amount),
+          p_total: Number(total_amount),
+          p_payment_method: payment_method,
+          p_notes: notes || null,
+        });
+
+        if (rpcErr) throw rpcErr;
+
+        if (rpcRes?.sale_id) {
+          newSale.id = rpcRes.sale_id;
+          newSale.sale_number = rpcRes.sale_number;
+          newInvoice.id = rpcRes.invoice_id;
+          newInvoice.invoice_number = rpcRes.invoice_number;
+        }
+      } catch (e) {
+        console.warn('Supabase process_sale RPC notice:', e);
+      }
+    }
 
     let pdfResult = null;
     let emailStatus = 'pending';
@@ -909,7 +1001,7 @@ export const PharmacyProvider = ({ children }) => {
     return emailRes;
   };
 
-  const addSupplier = (supplierData) => {
+  const addSupplier = async (supplierData) => {
     const newSupplier = {
       id: `sup-${Date.now()}`,
       pharmacy_id: pharmacy?.id || 'ph-001',
@@ -919,10 +1011,30 @@ export const PharmacyProvider = ({ children }) => {
     const next = [newSupplier, ...suppliers];
     setSuppliers(next);
     syncLocalStore({ suppliers: next });
+
+    if (isSupabaseConfigured && user && pharmacy?.id) {
+      try {
+        const { data } = await supabase.from('suppliers').insert({
+          pharmacy_id: pharmacy.id,
+          name: supplierData.name,
+          contact_person: supplierData.contact_person,
+          phone: supplierData.phone,
+          email: supplierData.email,
+          address: supplierData.address,
+          gst_number: supplierData.gst_number,
+        }).select().single();
+        if (data) {
+          newSupplier.id = data.id;
+        }
+      } catch (e) {
+        console.warn('Supabase addSupplier sync notice:', e);
+      }
+    }
+
     return newSupplier;
   };
 
-  const adjustStock = (inventoryId, newPiecesCount, reason = 'Inventory audit') => {
+  const adjustStock = async (inventoryId, newPiecesCount, reason = 'Inventory audit') => {
     const inv = inventory.find(i => i.id === inventoryId);
     if (!inv) return;
 
@@ -949,9 +1061,31 @@ export const PharmacyProvider = ({ children }) => {
     const nextMovs = [movement, ...stockMovements];
     setStockMovements(nextMovs);
     syncLocalStore({ inventory: nextInv, stock_movements: nextMovs });
+
+    if (isSupabaseConfigured && user && pharmacy?.id) {
+      try {
+        await supabase.from('inventory').update({
+          total_pieces: Math.max(0, newPiecesCount),
+          updated_at: new Date().toISOString(),
+        }).eq('id', inventoryId);
+
+        await supabase.from('stock_movements').insert({
+          pharmacy_id: pharmacy.id,
+          medicine_id: inv.medicine_id,
+          batch_id: inv.batch_id,
+          movement_type: 'adjustment',
+          pieces_quantity: diff,
+          balance_after: Math.max(0, newPiecesCount),
+          reference_id: 'ADJ-MANUAL',
+          notes: reason,
+        });
+      } catch (e) {
+        console.warn('Supabase adjustStock sync notice:', e);
+      }
+    }
   };
 
-  const markBatchExpired = (batchId) => {
+  const markBatchExpired = async (batchId) => {
     const inv = inventory.find(i => i.batch_id === batchId);
     if (!inv) return;
 
@@ -978,6 +1112,28 @@ export const PharmacyProvider = ({ children }) => {
     const nextMovs = [movement, ...stockMovements];
     setStockMovements(nextMovs);
     syncLocalStore({ inventory: nextInv, stock_movements: nextMovs });
+
+    if (isSupabaseConfigured && user && pharmacy?.id) {
+      try {
+        await supabase.from('inventory').update({
+          total_pieces: 0,
+          updated_at: new Date().toISOString(),
+        }).eq('batch_id', batchId);
+
+        await supabase.from('stock_movements').insert({
+          pharmacy_id: pharmacy.id,
+          medicine_id: inv.medicine_id,
+          batch_id: batchId,
+          movement_type: 'expired_stock',
+          pieces_quantity: -removedCount,
+          balance_after: 0,
+          reference_id: `EXP-BATCH-${bat?.batch_number}`,
+          notes: `Written off expired batch stock (${removedCount} pieces)`,
+        });
+      } catch (e) {
+        console.warn('Supabase markBatchExpired sync notice:', e);
+      }
+    }
   };
 
   // Metrics
