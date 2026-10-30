@@ -118,7 +118,7 @@ export const PharmacyProvider = ({ children }) => {
   const loadPublicCatalog = async () => {
     try {
       const [
-        { data: meds },
+        { data: meds, error: medErr },
         { data: bts },
         { data: invs },
       ] = await Promise.all([
@@ -127,9 +127,14 @@ export const PharmacyProvider = ({ children }) => {
         supabase.from('inventory').select('*'),
       ]);
 
-      if (meds) setMedicines(meds);
-      if (bts) setBatches(bts);
-      if (invs) setInventory(invs);
+      if (medErr || !meds || meds.length === 0) {
+        const store = getLocalStore();
+        loadLocalCollections(store);
+      } else {
+        setMedicines(meds);
+        if (bts) setBatches(bts);
+        if (invs) setInventory(invs);
+      }
     } catch (e) {
       const store = getLocalStore();
       loadLocalCollections(store);
@@ -156,7 +161,7 @@ export const PharmacyProvider = ({ children }) => {
 
       // 2. Load collections
       const [
-        { data: meds },
+        { data: meds, error: medErr },
         { data: bts },
         { data: invs },
         { data: sups },
@@ -175,16 +180,23 @@ export const PharmacyProvider = ({ children }) => {
         supabase.from('stock_movements').select('*, medicines(name), batches(batch_number)').order('created_at', { ascending: false }),
       ]);
 
-      if (meds) setMedicines(meds);
-      if (bts) setBatches(bts);
-      if (invs) setInventory(invs);
-      if (sups) setSuppliers(sups);
-      if (custs) setCustomers(custs);
-      if (sls) setSales(sls);
-      if (invcs) setInvoices(invcs);
-      if (movs) setStockMovements(movs);
+      if (!medErr && meds && meds.length > 0) {
+        setMedicines(meds);
+        if (bts) setBatches(bts);
+        if (invs) setInventory(invs);
+        if (sups) setSuppliers(sups);
+        if (custs) setCustomers(custs);
+        if (sls) setSales(sls);
+        if (invcs) setInvoices(invcs);
+        if (movs) setStockMovements(movs);
+      } else {
+        const store = getLocalStore();
+        loadLocalCollections(store);
+      }
     } catch (err) {
       console.error('Error loading Supabase data:', err);
+      const store = getLocalStore();
+      loadLocalCollections(store);
     }
   };
 
