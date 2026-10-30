@@ -735,11 +735,13 @@ CREATE POLICY "Pharmacists manage own ai scans" ON public.ai_scans
     FOR ALL TO authenticated USING (pharmacy_id = public.get_auth_pharmacy_id())
     WITH CHECK (pharmacy_id = public.get_auth_pharmacy_id());
 
--- 12. Search Sessions: Anonymous and Authenticated can insert session tokens
+-- 12. Search Sessions: Anonymous and Authenticated can insert session tokens (Write-only to protect customer privacy)
 CREATE POLICY "Anyone can insert search sessions" ON public.search_sessions
     FOR INSERT TO anon, authenticated WITH CHECK (true);
-CREATE POLICY "Anyone can view search sessions" ON public.search_sessions
-    FOR SELECT TO anon, authenticated USING (true);
+
+-- Public CANNOT view search sessions. Only authenticated pharmacists can view discovery telemetry/analytics
+CREATE POLICY "Only authenticated pharmacists can view search sessions" ON public.search_sessions
+    FOR SELECT TO authenticated USING (true);
 
 -- 13. Stock Movements: Pharmacist private only
 CREATE POLICY "Pharmacists manage own stock movements" ON public.stock_movements

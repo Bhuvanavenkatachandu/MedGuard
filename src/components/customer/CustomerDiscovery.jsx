@@ -18,6 +18,7 @@ import {
 import { calculateDistanceKm, getGoogleMapsDirectionsUrl, DEMO_LOCATIONS } from '../../utils/geoUtils';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { getLocalStore } from '../../lib/mockStore';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
   const navigate = useNavigate();
@@ -42,6 +43,16 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
     // Generate a temporary anonymous search session token
     const token = `SS-${Math.floor(100000 + Math.random() * 900000)}`;
     setSearchSessionId(token);
+
+    // Write-only session logging (customers cannot read other sessions)
+    if (isSupabaseConfigured) {
+      supabase.from('search_sessions').insert({
+        session_token: token,
+        search_query: searchQuery || 'initial_discovery',
+        user_lat: userLocation.lat,
+        user_lng: userLocation.lng,
+      }).then(() => {}).catch(() => {});
+    }
   }, []);
 
   // Request browser geolocation
