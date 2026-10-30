@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { 
   Search, 
@@ -15,13 +16,23 @@ import {
 
 export const InventoryList = ({ setActiveTab }) => {
   const { inventory, medicines, batches, adjustStock } = usePharmacy();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlFilter = searchParams.get('filter');
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'expired'
+  const [statusFilter, setStatusFilter] = useState(urlFilter || 'all');
   const [editingItem, setEditingItem] = useState(null);
   const [adjustPieces, setAdjustPieces] = useState('');
   const [adjustReason, setAdjustReason] = useState('Stock count correction');
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Sync state if URL query param changes
+  useEffect(() => {
+    const f = searchParams.get('filter');
+    if (f && f !== statusFilter) {
+      setStatusFilter(f);
+    }
+  }, [searchParams]);
 
   // Enriched inventory items with computed strip and piece metrics
   const enrichedInventory = useMemo(() => {
@@ -29,15 +40,16 @@ export const InventoryList = ({ setActiveTab }) => {
       const med = medicines.find(m => m.id === inv.medicine_id) || {};
       const batch = batches.find(b => b.id === inv.batch_id) || {};
       const piecesPerStrip = inv.pieces_per_strip || med.pieces_per_strip || 10;
-      const totalPieces = inv.total_pieces || 0;
+      const totalPieces = Number(inv.total_pieces || 0);
+      const minStock = Number(inv.min_stock_pieces !== undefined && inv.min_stock_pieces !== null ? inv.min_stock_pieces : 20);
 
       // STRICT REQUIREMENT FORMULA:
       const availableStrips = Math.floor(totalPieces / piecesPerStrip);
       const loosePieces = totalPieces % piecesPerStrip;
 
       const isExpired = batch.expiry_date && batch.expiry_date < todayStr;
-      const isLowStock = !isExpired && totalPieces > 0 && totalPieces <= (inv.min_stock_pieces || 20);
       const isOutOfStock = totalPieces === 0;
+      const isLowStock = !isExpired && (totalPieces <= minStock);
 
       let status = 'in_stock';
       if (isExpired) status = 'expired';
@@ -57,6 +69,8 @@ export const InventoryList = ({ setActiveTab }) => {
         piecesPerStrip,
         availableStrips,
         loosePieces,
+        total_pieces: totalPieces,
+        min_stock_pieces: minStock,
         status,
       };
     });
@@ -73,9 +87,17 @@ export const InventoryList = ({ setActiveTab }) => {
         item.batch_number.toLowerCase().includes(query) ||
         item.strength.toLowerCase().includes(query);
 
-      const matchesStatus = 
-        statusFilter === 'all' || 
-        item.status === statusFilter;
+      let matchesStatus = false;
+      if (statusFilter === 'all') {
+        matchesStatus = true;
+      } else if (statusFilter === 'low_stock') {
+        // Low stock filter includes both low stock items and out of stock items (urgent reorder)
+        matchesStatus = item.status === 'low_stock' || item.status === 'out_of_stock' || item.total_pieces <= item.min_stock_pieces;
+      } else if (statusFilter === 'out_of_stock') {
+        matchesStatus = item.total_pieces === 0 || item.status === 'out_of_stock';
+      } else {
+        matchesStatus = item.status === statusFilter;
+      }
 
       return matchesSearch && matchesStatus;
     });
@@ -135,11 +157,20 @@ export const InventoryList = ({ setActiveTab }) => {
             { id: 'all', label: 'All Items' },
             { id: 'in_stock', label: 'In Stock' },
             { id: 'low_stock', label: 'Low Stock' },
+            { id: 'out_of_stock', label: 'Out of Stock' },
             { id: 'expired', label: 'Expired' },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
+              onClick={() => {
+                setStatusFilter(tab.id);
+                if (tab.id === 'all') {
+                  searchParams.delete('filter');
+                  setSearchParams(searchParams, { replace: true });
+                } else {
+                  setSearchParams({ filter: tab.id }, { replace: true });
+                }
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
                 statusFilter === tab.id
                   ? 'bg-slate-900 text-white'

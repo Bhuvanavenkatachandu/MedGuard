@@ -139,7 +139,7 @@ export const Dashboard = ({ setActiveTab }) => {
 
         {/* Low Stock Items */}
         <div 
-          onClick={() => setActiveTab('inventory')}
+          onClick={() => setActiveTab('inventory?filter=low_stock')}
           className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm cursor-pointer hover:border-rose-300 transition-all"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">

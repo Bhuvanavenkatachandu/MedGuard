@@ -5,6 +5,75 @@ import { generateInvoicePdf, uploadInvoicePdf } from '../utils/pdfGenerator';
 
 const DEMO_AUTH_KEY = 'medguard_demo_auth_session';
 
+const isValidUUID = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+const normalizeSale = (sale, medicinesMap = new Map(), batchesMap = new Map()) => {
+  if (!sale) return sale;
+  const cust = sale.customers || {};
+  const rawItems = sale.sale_items || sale.items || [];
+  const normalizedItems = rawItems.map(it => {
+    const med = medicinesMap.get(it.medicine_id);
+    const bat = batchesMap.get(it.batch_id);
+    return {
+      ...it,
+      medicine_name: it.medicine_name || med?.name || 'Unknown Medicine',
+      batch_number: it.batch_number || bat?.batch_number || 'N/A',
+      expiry_date: it.expiry_date || bat?.expiry_date || 'N/A',
+    };
+  });
+
+  return {
+    ...sale,
+    customer_name: cust.name || sale.customer_name || 'Walk-in Customer',
+    customer_phone: cust.phone || sale.customer_phone || 'N/A',
+    customer_email: cust.email || sale.customer_email || '',
+    items: normalizedItems,
+  };
+};
+
+const normalizeMovement = (m, medicinesMap = new Map(), batchesMap = new Map()) => {
+  if (!m) return m;
+  const med = m.medicines || (m.medicine_id ? medicinesMap.get(m.medicine_id) : null);
+  const bat = m.batches || (m.batch_id ? batchesMap.get(m.batch_id) : null);
+  return {
+    ...m,
+    medicine_name: m.medicine_name || med?.name || 'Unknown Medicine',
+    batch_number: m.batch_number || bat?.batch_number || 'N/A',
+  };
+};
+
+const normalizeInventoryItem = (inv, medicinesMap = new Map(), batchesMap = new Map()) => {
+  if (!inv) return inv;
+  const med = inv.medicines || (inv.medicine_id ? medicinesMap.get(inv.medicine_id) : null);
+  const bat = inv.batches || (inv.batch_id ? batchesMap.get(inv.batch_id) : null);
+  const pPerStrip = Number(inv.pieces_per_strip) || Number(med?.pieces_per_strip) || 10;
+  const totalPieces = Number(inv.total_pieces) || 0;
+  return {
+    ...inv,
+    pieces_per_strip: pPerStrip,
+    total_pieces: totalPieces,
+    available_strips: Math.floor(totalPieces / pPerStrip),
+    loose_pieces: totalPieces % pPerStrip,
+    medicine_name: med?.name || inv.medicine_name || 'Unknown Medicine',
+    batch_number: bat?.batch_number || inv.batch_number || 'N/A',
+    expiry_date: bat?.expiry_date || inv.expiry_date || 'N/A',
+  };
+};
+
 const PharmacyContext = createContext(null);
 
 export const PharmacyProvider = ({ children }) => {
@@ -36,9 +105,28 @@ export const PharmacyProvider = ({ children }) => {
         if (newSession?.user) {
           await loadSupabaseData(newSession.user.id);
         } else {
-          setProfile(null);
-          setPharmacy(null);
-          loadPublicCatalog();
+          // Check local session before clearing
+          const demoAuthRaw = localStorage.getItem(DEMO_AUTH_KEY);
+          if (demoAuthRaw) {
+            try {
+              const demoAuth = JSON.parse(demoAuthRaw);
+              setUser(demoAuth.user);
+              setProfile(demoAuth.profile);
+              const store = getLocalStore();
+              if (demoAuth.profile?.pharmacy_id && store.pharmacy) {
+                setPharmacy(store.pharmacy);
+              }
+              loadLocalCollections(store);
+            } catch (e) {
+              setProfile(null);
+              setPharmacy(null);
+              loadPublicCatalog();
+            }
+          } else {
+            setProfile(null);
+            setPharmacy(null);
+            loadPublicCatalog();
+          }
         }
       });
 
@@ -58,10 +146,32 @@ export const PharmacyProvider = ({ children }) => {
           setUser(currentSession.user);
           await loadSupabaseData(currentSession.user.id);
         } else {
-          setUser(null);
-          setProfile(null);
-          setPharmacy(null);
-          await loadPublicCatalog();
+          // Check local session if no active Supabase Auth token
+          const demoAuthRaw = localStorage.getItem(DEMO_AUTH_KEY);
+          if (demoAuthRaw) {
+            try {
+              const demoAuth = JSON.parse(demoAuthRaw);
+              setUser(demoAuth.user);
+              setProfile(demoAuth.profile);
+              const store = getLocalStore();
+              if (demoAuth.profile?.pharmacy_id && store.pharmacy) {
+                setPharmacy(store.pharmacy);
+              } else {
+                setPharmacy(null);
+              }
+              loadLocalCollections(store);
+            } catch (e) {
+              setUser(null);
+              setProfile(null);
+              setPharmacy(null);
+              await loadPublicCatalog();
+            }
+          } else {
+            setUser(null);
+            setProfile(null);
+            setPharmacy(null);
+            await loadPublicCatalog();
+          }
         }
       } else {
         // Check local demo auth session
@@ -127,39 +237,70 @@ export const PharmacyProvider = ({ children }) => {
         supabase.from('inventory').select('*'),
       ]);
 
-      if (medErr || !meds || meds.length === 0) {
+      if (medErr) {
+        console.warn('Public catalog query error:', medErr);
         const store = getLocalStore();
         loadLocalCollections(store);
       } else {
-        setMedicines(meds);
-        if (bts) setBatches(bts);
-        if (invs) setInventory(invs);
+        setMedicines(meds || []);
+        setBatches(bts || []);
+        setInventory(invs || []);
       }
     } catch (e) {
+      console.warn('Public catalog load exception:', e);
       const store = getLocalStore();
       loadLocalCollections(store);
     }
   };
 
-  const loadSupabaseData = async (userId) => {
+  const loadSupabaseData = async (userId, targetPharmacyId = null) => {
     try {
-      // 1. Load profile & linked pharmacy
-      const { data: prof, error: profErr } = await supabase
-        .from('profiles')
-        .select('*, pharmacies(*)')
-        .eq('id', userId)
-        .single();
+      let prof = null;
+      let activePharmId = targetPharmacyId;
 
-      if (prof) {
-        setProfile(prof);
-        if (prof.pharmacy_id && prof.pharmacies) {
-          setPharmacy(prof.pharmacies);
-        } else {
-          setPharmacy(null);
+      // 1. Load profile & linked pharmacy if userId is provided
+      if (userId && isValidUUID(userId)) {
+        const { data: profData } = await supabase
+          .from('profiles')
+          .select('*, pharmacies(*)')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (profData) {
+          prof = profData;
+          setProfile(profData);
+          if (!activePharmId && profData.pharmacy_id) {
+            activePharmId = profData.pharmacy_id;
+          }
+          if (profData.pharmacy_id && profData.pharmacies) {
+            setPharmacy(profData.pharmacies);
+          }
         }
       }
 
-      // 2. Load collections
+      if (!activePharmId && pharmacy?.id && isValidUUID(pharmacy.id)) {
+        activePharmId = pharmacy.id;
+      }
+
+      // If active pharmacy object is not yet loaded, fetch it
+      if (activePharmId && (!pharmacy || pharmacy.id !== activePharmId)) {
+        const { data: phData } = await supabase
+          .from('pharmacies')
+          .select('*')
+          .eq('id', activePharmId)
+          .maybeSingle();
+        if (phData) {
+          setPharmacy(phData);
+        }
+      }
+
+      // If no active pharmacy ID can be resolved, fall back to public catalog
+      if (!activePharmId) {
+        await loadPublicCatalog();
+        return;
+      }
+
+      // 2. Load collections strictly scoped by active pharmacy
       const [
         { data: meds, error: medErr },
         { data: bts },
@@ -169,27 +310,61 @@ export const PharmacyProvider = ({ children }) => {
         { data: sls },
         { data: invcs },
         { data: movs },
+        { data: elogs },
       ] = await Promise.all([
-        supabase.from('medicines').select('*'),
-        supabase.from('batches').select('*, suppliers(name)'),
-        supabase.from('inventory').select('*, medicines(*), batches(*)'),
-        supabase.from('suppliers').select('*'),
-        supabase.from('customers').select('*'),
-        supabase.from('sales').select('*, sale_items(*), customers(*)').order('created_at', { ascending: false }),
-        supabase.from('invoices').select('*').order('created_at', { ascending: false }),
-        supabase.from('stock_movements').select('*, medicines(name), batches(batch_number)').order('created_at', { ascending: false }),
+        supabase.from('medicines').select('*').eq('pharmacy_id', activePharmId),
+        supabase.from('batches').select('*, suppliers(name)').eq('pharmacy_id', activePharmId),
+        supabase.from('inventory').select('*, medicines(*), batches(*)').eq('pharmacy_id', activePharmId),
+        supabase.from('suppliers').select('*').eq('pharmacy_id', activePharmId),
+        supabase.from('customers').select('*').eq('pharmacy_id', activePharmId).order('created_at', { ascending: false }),
+        supabase.from('sales').select('*, sale_items(*), customers(*)').eq('pharmacy_id', activePharmId).order('created_at', { ascending: false }),
+        supabase.from('invoices').select('*').eq('pharmacy_id', activePharmId).order('created_at', { ascending: false }),
+        supabase.from('stock_movements').select('*, medicines(name), batches(batch_number)').eq('pharmacy_id', activePharmId).order('created_at', { ascending: false }),
+        supabase.from('email_logs').select('*').eq('pharmacy_id', activePharmId).order('created_at', { ascending: false }),
       ]);
 
-      if (!medErr && meds && meds.length > 0) {
-        setMedicines(meds);
-        if (bts) setBatches(bts);
-        if (invs) setInventory(invs);
-        if (sups) setSuppliers(sups);
-        if (custs) setCustomers(custs);
-        if (sls) setSales(sls);
-        if (invcs) setInvoices(invcs);
-        if (movs) setStockMovements(movs);
+      if (!medErr) {
+        const finalMeds = meds || [];
+        const finalBts = bts || [];
+        const finalSups = sups || [];
+        const finalCusts = custs || [];
+        const finalInvcs = invcs || [];
+        const finalElogs = elogs || [];
+
+        // Build lookup maps for relational joining
+        const medicinesMap = new Map(finalMeds.map(m => [m.id, m]));
+        const batchesMap = new Map(finalBts.map(b => [b.id, b]));
+
+        // Normalize relational structures so frontend UI always has clean, flat properties
+        const normalizedSales = (sls || []).map(s => normalizeSale(s, medicinesMap, batchesMap));
+        const normalizedMovements = (movs || []).map(m => normalizeMovement(m, medicinesMap, batchesMap));
+        const normalizedInventory = (invs || []).map(i => normalizeInventoryItem(i, medicinesMap, batchesMap));
+
+        setMedicines(finalMeds);
+        setBatches(finalBts);
+        setInventory(normalizedInventory);
+        setSuppliers(finalSups);
+        setCustomers(finalCusts);
+        setSales(normalizedSales);
+        setInvoices(finalInvcs);
+        setStockMovements(normalizedMovements);
+        setEmailLogs(finalElogs);
+
+        // Keep local storage in sync as offline cache
+        saveLocalStore({
+          pharmacy: pharmacy?.id === activePharmId ? pharmacy : null,
+          medicines: finalMeds,
+          batches: finalBts,
+          inventory: normalizedInventory,
+          suppliers: finalSups,
+          customers: finalCusts,
+          sales: normalizedSales,
+          invoices: finalInvcs,
+          stock_movements: normalizedMovements,
+          email_logs: finalElogs,
+        });
       } else {
+        console.warn('Supabase query error:', medErr);
         const store = getLocalStore();
         loadLocalCollections(store);
       }
@@ -315,26 +490,74 @@ export const PharmacyProvider = ({ children }) => {
     }
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.rpc('create_pharmacy_for_pharmacist', {
-        p_name: name,
-        p_owner_name: ownerName,
-        p_phone: phone || 'N/A',
-        p_email: email || '',
-        p_address: address,
-        p_city: city || '',
-        p_state: state || '',
-        p_pincode: pincode || '',
-        p_license_number: licenseNumber || '',
-        p_latitude: parseFloat(latitude),
-        p_longitude: parseFloat(longitude),
-      });
+      let createdPharmacyId = null;
 
-      if (error) throw error;
+      try {
+        const { data, error } = await supabase.rpc('create_pharmacy_for_pharmacist', {
+          p_name: name,
+          p_owner_name: ownerName,
+          p_phone: phone || 'N/A',
+          p_email: email || '',
+          p_address: address,
+          p_city: city || '',
+          p_state: state || '',
+          p_pincode: pincode || '',
+          p_license_number: licenseNumber || '',
+          p_latitude: parseFloat(latitude),
+          p_longitude: parseFloat(longitude),
+        });
+
+        if (!error && data?.pharmacy_id) {
+          createdPharmacyId = data.pharmacy_id;
+        }
+      } catch (rpcErr) {
+        console.warn('RPC create_pharmacy_for_pharmacist notice:', rpcErr);
+      }
+
+      // Direct table insert fallback if RPC was not created in Supabase SQL editor
+      if (!createdPharmacyId) {
+        try {
+          const { data: newPharm, error: phErr } = await supabase
+            .from('pharmacies')
+            .insert({
+              name,
+              owner_name: ownerName,
+              phone: phone || '+91 98765 43210',
+              email: email || '',
+              address,
+              city: city || 'Bengaluru',
+              state: state || 'Karnataka',
+              pincode: pincode || '',
+              license_number: licenseNumber || 'DL-KA-2026-99999',
+              latitude: parseFloat(latitude),
+              longitude: parseFloat(longitude),
+              near_expiry_threshold_days: 30,
+            })
+            .select()
+            .single();
+
+          if (phErr) throw phErr;
+          createdPharmacyId = newPharm.id;
+
+          if (user?.id) {
+            await supabase.from('profiles').upsert({
+              id: user.id,
+              pharmacy_id: createdPharmacyId,
+              full_name: ownerName,
+              phone: phone || '',
+              role: 'pharmacist',
+            });
+          }
+        } catch (directErr) {
+          console.error('Direct pharmacy creation fallback failed:', directErr);
+          throw directErr;
+        }
+      }
 
       if (user?.id) {
         await loadSupabaseData(user.id);
       }
-      return { success: true, pharmacyId: data?.pharmacy_id };
+      return { success: true, pharmacyId: createdPharmacyId };
     } else {
       // Demo pharmacy setup
       const newPharmacy = {
@@ -412,14 +635,14 @@ export const PharmacyProvider = ({ children }) => {
       }
       return { success: true, isSetupComplete: false };
     } else {
-      // Demo login
+      // Local fallback login
       const store = getLocalStore();
-      const demoUser = { id: 'demo-user-1', email };
+      const demoUser = { id: 'user-local', email };
       const demoProfile = {
         id: demoUser.id,
-        full_name: store.pharmacy?.owner_name || 'Dr. Rajesh Sharma',
+        full_name: store.pharmacy?.owner_name || 'Pharmacist',
         role: 'pharmacist',
-        pharmacy_id: store.pharmacy?.id || 'ph-001',
+        pharmacy_id: store.pharmacy?.id || null,
       };
       const demoAuthSession = {
         user: demoUser,
@@ -429,23 +652,23 @@ export const PharmacyProvider = ({ children }) => {
 
       setUser(demoUser);
       setProfile(demoProfile);
-      setPharmacy(store.pharmacy);
+      setPharmacy(store.pharmacy || null);
       loadLocalCollections(store);
-      return { success: true, isSetupComplete: true };
+      return { success: true, isSetupComplete: Boolean(store.pharmacy?.id) };
     }
   };
 
   /**
-   * 1-Click Instant Demo Login for reviewers
+   * Fast Local Login
    */
   const loginWithDemoSession = () => {
     const store = getLocalStore();
-    const demoUser = { id: 'demo-user-1', email: 'pharmacist@apollo.io' };
+    const demoUser = { id: 'user-local', email: 'pharmacist@pharmacy.com' };
     const demoProfile = {
       id: demoUser.id,
-      full_name: 'Dr. Rajesh Sharma',
+      full_name: store.pharmacy?.owner_name || 'Pharmacist',
       role: 'pharmacist',
-      pharmacy_id: store.pharmacy?.id || 'ph-001',
+      pharmacy_id: store.pharmacy?.id || null,
     };
     const demoAuthSession = {
       user: demoUser,
@@ -455,9 +678,9 @@ export const PharmacyProvider = ({ children }) => {
 
     setUser(demoUser);
     setProfile(demoProfile);
-    setPharmacy(store.pharmacy);
+    setPharmacy(store.pharmacy || null);
     loadLocalCollections(store);
-    return { success: true, isSetupComplete: true };
+    return { success: true, isSetupComplete: Boolean(store.pharmacy?.id) };
   };
 
   /**
@@ -500,41 +723,98 @@ export const PharmacyProvider = ({ children }) => {
 
   const getOrCreateCustomer = async ({ name, phone, email, address }) => {
     const normPhone = normalizePhone(phone);
-    const existing = customers.find(c => normalizePhone(c.phone) === normPhone);
-    if (existing) {
-      if (email && email !== existing.email) {
-        const updated = { ...existing, email };
-        const nextCustomers = customers.map(c => c.id === existing.id ? updated : c);
-        setCustomers(nextCustomers);
-        syncLocalStore({ customers: nextCustomers });
-        return updated;
+    const activePharmacyId = (pharmacy?.id && isValidUUID(pharmacy.id)) 
+      ? pharmacy.id 
+      : (profile?.pharmacy_id && isValidUUID(profile.pharmacy_id) ? profile.pharmacy_id : null);
+
+    // 1. Check in-memory customers state first
+    let existing = customers.find(c => 
+      (!activePharmacyId || c.pharmacy_id === activePharmacyId) && 
+      normalizePhone(c.phone) === normPhone
+    );
+
+    // 2. If Supabase is connected and pharmacy ID is known, query or upsert in database
+    if (isSupabaseConfigured && activePharmacyId) {
+      try {
+        const { data: dbExisting } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('pharmacy_id', activePharmacyId)
+          .eq('phone', normPhone)
+          .maybeSingle();
+
+        if (dbExisting) {
+          existing = dbExisting;
+          const updates = {};
+          if (email && email.trim() && email.trim() !== existing.email) {
+            updates.email = email.trim();
+          }
+          if (name && name.trim() && name.trim() !== existing.name && existing.name === 'Walk-in Customer') {
+            updates.name = name.trim();
+          }
+          if (address && address.trim() && address.trim() !== existing.address) {
+            updates.address = address.trim();
+          }
+
+          if (Object.keys(updates).length > 0) {
+            const { data: updatedDb } = await supabase
+              .from('customers')
+              .update(updates)
+              .eq('id', existing.id)
+              .select()
+              .single();
+            if (updatedDb) existing = updatedDb;
+          }
+        } else {
+          // Customer does not exist in DB yet, insert
+          const { data: dbCustomer, error: insertErr } = await supabase
+            .from('customers')
+            .insert({
+              pharmacy_id: activePharmacyId,
+              name: name?.trim() || 'Valued Patient',
+              phone: normPhone,
+              email: email?.trim() || null,
+              address: address?.trim() || null,
+            })
+            .select()
+            .single();
+
+          if (!insertErr && dbCustomer) {
+            existing = dbCustomer;
+          } else if (insertErr) {
+            console.warn('Customer insert conflict or notice:', insertErr);
+            const { data: retryDb } = await supabase
+              .from('customers')
+              .select('*')
+              .eq('pharmacy_id', activePharmacyId)
+              .eq('phone', normPhone)
+              .maybeSingle();
+            if (retryDb) existing = retryDb;
+          }
+        }
+      } catch (e) {
+        console.warn('Customer DB resolution notice:', e);
       }
-      return existing;
     }
 
-    const newCustomer = {
-      id: `cust-${Date.now()}`,
-      pharmacy_id: pharmacy?.id || 'ph-001',
-      name: name?.trim() || 'Valued Patient',
-      phone: normPhone,
-      email: email?.trim() || '',
-      address: address?.trim() || '',
-      created_at: new Date().toISOString(),
-    };
+    // 3. Fallback for demo / offline mode
+    if (!existing) {
+      existing = {
+        id: generateUUID(),
+        pharmacy_id: activePharmacyId || '00000000-0000-0000-0000-000000000001',
+        name: name?.trim() || 'Valued Patient',
+        phone: normPhone,
+        email: email?.trim() || '',
+        address: address?.trim() || '',
+        created_at: new Date().toISOString(),
+      };
+    }
 
-    const nextCustomers = [newCustomer, ...customers];
+    const nextCustomers = [existing, ...customers.filter(c => c.id !== existing.id && normalizePhone(c.phone) !== normPhone)];
     setCustomers(nextCustomers);
     syncLocalStore({ customers: nextCustomers });
 
-    if (isSupabaseConfigured && user) {
-      try {
-        await supabase.from('customers').insert(newCustomer);
-      } catch (e) {
-        console.warn('Customer Supabase insert fallback to local:', e);
-      }
-    }
-
-    return newCustomer;
+    return existing;
   };
 
   // ==========================================
@@ -711,6 +991,8 @@ export const PharmacyProvider = ({ children }) => {
           reference_id: `INWARD-${batch_number}`,
           notes: `Inward stock received: ${stripsCount} strip(s) (${totalPiecesToAdd} pieces)`,
         });
+
+        await loadSupabaseData(user.id, pharmacy.id);
       } catch (e) {
         console.warn('Supabase addStock sync notice:', e);
       }
@@ -738,13 +1020,29 @@ export const PharmacyProvider = ({ children }) => {
     payment_method = 'Cash',
     notes = '',
   }) => {
+    const activePharmacyId = (pharmacy?.id && isValidUUID(pharmacy.id)) 
+      ? pharmacy.id 
+      : (profile?.pharmacy_id && isValidUUID(profile.pharmacy_id) ? profile.pharmacy_id : null);
+
+    // 1. Resolve Customer
     let cust = null;
-    if (customer_id) {
+    if (customer_id && isValidUUID(customer_id)) {
       cust = customers.find(c => c.id === customer_id);
-    } else if (customer_data) {
+      if (!cust && isSupabaseConfigured && activePharmacyId) {
+        const { data: dbCust } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', customer_id)
+          .eq('pharmacy_id', activePharmacyId)
+          .maybeSingle();
+        if (dbCust) cust = dbCust;
+      }
+    }
+    if (!cust && customer_data) {
       cust = await getOrCreateCustomer(customer_data);
     }
 
+    // 2. Validate FEFO and inventory balance for each item
     const today = new Date().toISOString().split('T')[0];
     for (const item of items) {
       const b = batches.find(x => x.id === item.batch_id);
@@ -753,45 +1051,22 @@ export const PharmacyProvider = ({ children }) => {
       }
 
       const inv = inventory.find(x => x.batch_id === item.batch_id);
-      if (!inv || inv.total_pieces < item.pieces_count) {
-        throw new Error(`Insufficient stock for ${item.medicine_name}. Available: ${inv?.total_pieces || 0} pieces, requested: ${item.pieces_count} pieces.`);
+      const availablePieces = inv ? Number(inv.total_pieces) : 0;
+      const requestedPieces = Number(item.pieces_count);
+      if (availablePieces < requestedPieces) {
+        throw new Error(`Insufficient stock for ${item.medicine_name}. Available: ${availablePieces} pieces, requested: ${requestedPieces} pieces.`);
       }
     }
 
     const saleNumber = `SALE-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10000 + Math.random() * 90000)}`;
     const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    let nextInventory = [...inventory];
-    const newMovements = [];
-
-    for (const item of items) {
-      const invIndex = nextInventory.findIndex(x => x.batch_id === item.batch_id);
-      if (invIndex !== -1) {
-        const cur = nextInventory[invIndex];
-        const newBalance = Math.max(0, cur.total_pieces - item.pieces_count);
-        nextInventory[invIndex] = {
-          ...cur,
-          total_pieces: newBalance,
-        };
-
-        newMovements.push({
-          id: `sm-${Date.now()}-${Math.random()}`,
-          pharmacy_id: pharmacy?.id || 'ph-001',
-          medicine_name: item.medicine_name,
-          batch_number: item.batch_number,
-          movement_type: 'sale',
-          pieces_quantity: -item.pieces_count,
-          balance_after: newBalance,
-          reference_id: saleNumber,
-          notes: `Sold ${item.quantity_units} ${item.unit_type}(s)`,
-          created_at: new Date().toISOString(),
-        });
-      }
-    }
+    const saleId = generateUUID();
+    const invoiceId = generateUUID();
 
     const newSale = {
-      id: `sale-${Date.now()}`,
-      pharmacy_id: pharmacy?.id || 'ph-001',
+      id: saleId,
+      pharmacy_id: activePharmacyId || '00000000-0000-0000-0000-000000000001',
       customer_id: cust?.id || null,
       customer_name: cust?.name || 'Walk-in Customer',
       customer_phone: cust?.phone || 'N/A',
@@ -809,8 +1084,8 @@ export const PharmacyProvider = ({ children }) => {
     };
 
     const newInvoice = {
-      id: `inv-rec-${Date.now()}`,
-      pharmacy_id: pharmacy?.id || 'ph-001',
+      id: invoiceId,
+      pharmacy_id: activePharmacyId || '00000000-0000-0000-0000-000000000001',
       sale_id: newSale.id,
       invoice_number: invoiceNumber,
       customer_name: newSale.customer_name,
@@ -822,59 +1097,184 @@ export const PharmacyProvider = ({ children }) => {
       created_at: new Date().toISOString(),
     };
 
-    const nextSales = [newSale, ...sales];
-    const nextInvoices = [newInvoice, ...invoices];
-    const nextMovements = [...newMovements, ...stockMovements];
-
-    setInventory(nextInventory);
-    setSales(nextSales);
-    setInvoices(nextInvoices);
-    setStockMovements(nextMovements);
-
-    syncLocalStore({
-      inventory: nextInventory,
-      sales: nextSales,
-      invoices: nextInvoices,
-      stock_movements: nextMovements,
-    });
-
-    // Live Supabase Atomic Sale Execution
-    if (isSupabaseConfigured && user && pharmacy?.id) {
+    // 3. Supabase Live Atomic Sale Execution
+    if (isSupabaseConfigured && activePharmacyId) {
       try {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('process_sale', {
-          p_pharmacy_id: pharmacy.id,
-          p_customer_id: cust?.id || null,
-          p_pharmacist_id: profile?.id || user.id,
-          p_items: items.map(it => ({
-            medicine_id: it.medicine_id,
-            batch_id: it.batch_id,
-            unit_type: it.unit_type,
-            quantity_units: it.quantity_units,
-            pieces_count: it.pieces_count,
-            unit_price: it.unit_price,
-            total_price: it.total_price,
-          })),
-          p_subtotal: Number(subtotal),
-          p_discount: Number(discount_amount),
-          p_tax: Number(tax_amount),
-          p_total: Number(total_amount),
-          p_payment_method: payment_method,
-          p_notes: notes || null,
-        });
+        const validCustomerId = (cust?.id && isValidUUID(cust.id)) ? cust.id : null;
+        const validPharmacistId = (profile?.id && isValidUUID(profile.id)) 
+          ? profile.id 
+          : (user?.id && isValidUUID(user.id) ? user.id : null);
 
-        if (rpcErr) throw rpcErr;
+        let rpcSuccess = false;
+        try {
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc('process_sale', {
+            p_pharmacy_id: activePharmacyId,
+            p_customer_id: validCustomerId,
+            p_pharmacist_id: validPharmacistId,
+            p_items: items.map(it => ({
+              medicine_id: (it.medicine_id && isValidUUID(it.medicine_id)) ? it.medicine_id : null,
+              batch_id: (it.batch_id && isValidUUID(it.batch_id)) ? it.batch_id : null,
+              unit_type: it.unit_type,
+              quantity_units: Number(it.quantity_units),
+              pieces_count: Number(it.pieces_count),
+              unit_price: Number(it.unit_price),
+              total_price: Number(it.total_price),
+            })),
+            p_subtotal: Number(subtotal),
+            p_discount: Number(discount_amount),
+            p_tax: Number(tax_amount),
+            p_total: Number(total_amount),
+            p_payment_method: payment_method,
+            p_notes: notes || null,
+          });
 
-        if (rpcRes?.sale_id) {
-          newSale.id = rpcRes.sale_id;
-          newSale.sale_number = rpcRes.sale_number;
-          newInvoice.id = rpcRes.invoice_id;
-          newInvoice.invoice_number = rpcRes.invoice_number;
+          if (!rpcErr && rpcRes?.sale_id) {
+            newSale.id = rpcRes.sale_id;
+            newSale.sale_number = rpcRes.sale_number;
+            newInvoice.id = rpcRes.invoice_id;
+            newInvoice.invoice_number = rpcRes.invoice_number;
+            rpcSuccess = true;
+          } else if (rpcErr) {
+            console.warn('RPC process_sale error, proceeding to table fallback:', rpcErr);
+          }
+        } catch (rpcEx) {
+          console.warn('RPC process_sale exception, trying table fallback:', rpcEx);
         }
+
+        // Direct table insert fallback if RPC fails or is unavailable
+        if (!rpcSuccess) {
+          // A. Insert Sale Header
+          const { data: saleData, error: saleErr } = await supabase.from('sales').insert({
+            pharmacy_id: activePharmacyId,
+            customer_id: validCustomerId,
+            pharmacist_id: validPharmacistId,
+            sale_number: saleNumber,
+            subtotal: Number(subtotal),
+            discount_amount: Number(discount_amount),
+            tax_amount: Number(tax_amount),
+            total_amount: Number(total_amount),
+            payment_method,
+            notes: notes || null,
+          }).select().single();
+
+          if (saleErr) throw saleErr;
+          newSale.id = saleData.id;
+          newSale.sale_number = saleData.sale_number;
+
+          // B. Insert Sale Items, Deduct Inventory, Record Stock Movements
+          for (const it of items) {
+            const medId = (it.medicine_id && isValidUUID(it.medicine_id)) ? it.medicine_id : null;
+            const batId = (it.batch_id && isValidUUID(it.batch_id)) ? it.batch_id : null;
+
+            await supabase.from('sale_items').insert({
+              sale_id: saleData.id,
+              medicine_id: medId,
+              batch_id: batId,
+              unit_type: it.unit_type,
+              quantity_units: Number(it.quantity_units),
+              pieces_count: Number(it.pieces_count),
+              unit_price: Number(it.unit_price),
+              total_price: Number(it.total_price),
+            });
+
+            // Deduct inventory pieces
+            const invMatch = inventory.find(x => x.batch_id === it.batch_id);
+            const currentStock = invMatch ? Number(invMatch.total_pieces) : 0;
+            const newBal = Math.max(0, currentStock - Number(it.pieces_count));
+
+            await supabase.from('inventory')
+              .update({ total_pieces: newBal, updated_at: new Date().toISOString() })
+              .eq('batch_id', it.batch_id)
+              .eq('pharmacy_id', activePharmacyId);
+
+            // Record stock movement audit trail
+            await supabase.from('stock_movements').insert({
+              pharmacy_id: activePharmacyId,
+              medicine_id: medId,
+              batch_id: batId,
+              movement_type: 'sale',
+              pieces_quantity: -Number(it.pieces_count),
+              balance_after: newBal,
+              reference_id: saleData.sale_number,
+              notes: `Sale checkout (${it.quantity_units} ${it.unit_type})`,
+            });
+          }
+
+          // C. Insert Invoice
+          const { data: invData, error: invErr } = await supabase.from('invoices').insert({
+            pharmacy_id: activePharmacyId,
+            sale_id: saleData.id,
+            invoice_number: invoiceNumber,
+            customer_name: newSale.customer_name,
+            customer_phone: newSale.customer_phone,
+            customer_email: newSale.customer_email,
+            total_amount: Number(total_amount),
+            status: 'generated',
+          }).select().single();
+
+          if (invData) {
+            newInvoice.id = invData.id;
+            newInvoice.invoice_number = invData.invoice_number;
+          }
+        }
+
+        // CRITICAL STEP: IMMEDIATELY RELOAD DATABASE STATE!
+        // This guarantees the database is the source of truth, updating:
+        // - inventory (decreased total_pieces)
+        // - sales (contains new sale with items and customer)
+        // - invoices (contains new invoice)
+        // - stock_movements (contains new audit trail entry)
+        // - metrics (automatically recalculated!)
+        // - customer purchase history (linked via sales)
+        await loadSupabaseData(user?.id, activePharmacyId);
       } catch (e) {
-        console.warn('Supabase process_sale RPC notice:', e);
+        console.error('Supabase atomic sale transaction notice:', e);
+        throw e;
       }
+    } else {
+      // Local / Demo mode fallback
+      let nextInventory = [...inventory];
+      const newMovements = [];
+
+      for (const item of items) {
+        const invIndex = nextInventory.findIndex(x => x.batch_id === item.batch_id);
+        if (invIndex !== -1) {
+          const cur = nextInventory[invIndex];
+          const newBalance = Math.max(0, cur.total_pieces - item.pieces_count);
+          nextInventory[invIndex] = {
+            ...cur,
+            total_pieces: newBalance,
+          };
+
+          newMovements.push({
+            id: `sm-${Date.now()}-${Math.random()}`,
+            pharmacy_id: pharmacy?.id || 'ph-001',
+            medicine_name: item.medicine_name,
+            batch_number: item.batch_number,
+            movement_type: 'sale',
+            pieces_quantity: -item.pieces_count,
+            balance_after: newBalance,
+            reference_id: saleNumber,
+            notes: `Sold ${item.quantity_units} ${item.unit_type}(s)`,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      setInventory(nextInventory);
+      setSales([newSale, ...sales]);
+      setInvoices([newInvoice, ...invoices]);
+      setStockMovements([...newMovements, ...stockMovements]);
+
+      syncLocalStore({
+        inventory: nextInventory,
+        sales: [newSale, ...sales],
+        invoices: [newInvoice, ...invoices],
+        stock_movements: [...newMovements, ...stockMovements],
+      });
     }
 
+    // 4. Generate PDF Invoice & Upload
     let pdfResult = null;
     let emailStatus = 'pending';
     let emailErrorMessage = null;
@@ -888,23 +1288,27 @@ export const PharmacyProvider = ({ children }) => {
       });
 
       if (pdfResult.blob) {
-        const uploadRes = await uploadInvoicePdf(pdfResult.blob, invoiceNumber);
+        const uploadRes = await uploadInvoicePdf(pdfResult.blob, newInvoice.invoice_number);
         if (uploadRes.success && uploadRes.publicUrl) {
           newInvoice.pdf_url = uploadRes.publicUrl;
+          if (isSupabaseConfigured && newInvoice.id && isValidUUID(newInvoice.id)) {
+            await supabase.from('invoices').update({ pdf_url: uploadRes.publicUrl }).eq('id', newInvoice.id);
+          }
         }
       }
     } catch (pdfErr) {
       console.warn('PDF generation notice:', pdfErr);
     }
 
+    // 5. Trigger Email Invoice if Customer Provided Email
     if (cust?.email && cust.email.includes('@')) {
       try {
         const emailRes = await triggerEmailInvoice({
           invoice_id: newInvoice.id,
-          pharmacy_id: pharmacy?.id || 'ph-001',
+          pharmacy_id: activePharmacyId || pharmacy?.id || 'ph-001',
           recipient_email: cust.email,
           customer_name: cust.name,
-          invoice_number: invoiceNumber,
+          invoice_number: newInvoice.invoice_number,
           total_amount: Number(total_amount),
           pharmacy_name: pharmacy?.name,
           pharmacy_phone: pharmacy?.phone,
@@ -921,6 +1325,9 @@ export const PharmacyProvider = ({ children }) => {
           emailErrorMessage = emailRes.error;
           newInvoice.status = 'email_failed';
         }
+        if (isSupabaseConfigured && newInvoice.id && isValidUUID(newInvoice.id)) {
+          await supabase.from('invoices').update({ status: newInvoice.status }).eq('id', newInvoice.id);
+        }
       } catch (emErr) {
         emailStatus = 'failed';
         emailErrorMessage = emErr.message;
@@ -929,7 +1336,7 @@ export const PharmacyProvider = ({ children }) => {
 
       const newEmailLog = {
         id: `el-${Date.now()}`,
-        pharmacy_id: pharmacy?.id || 'ph-001',
+        pharmacy_id: activePharmacyId || pharmacy?.id || 'ph-001',
         invoice_id: newInvoice.id,
         recipient_email: cust.email,
         status: emailStatus,
@@ -937,10 +1344,21 @@ export const PharmacyProvider = ({ children }) => {
         created_at: new Date().toISOString(),
       };
       setEmailLogs(prev => [newEmailLog, ...prev]);
-    }
 
-    setInvoices(prev => prev.map(inv => inv.id === newInvoice.id ? newInvoice : inv));
-    syncLocalStore();
+      if (isSupabaseConfigured && activePharmacyId && newInvoice.id && isValidUUID(newInvoice.id)) {
+        try {
+          await supabase.from('email_logs').insert({
+            pharmacy_id: activePharmacyId,
+            invoice_id: newInvoice.id,
+            recipient_email: cust.email,
+            status: emailStatus === 'emailed' ? 'sent' : (emailStatus === 'email_failed' ? 'failed' : 'pending'),
+            error_message: emailErrorMessage,
+          });
+        } catch (elErr) {
+          console.warn('Could not record to email_logs in Supabase:', elErr);
+        }
+      }
+    }
 
     return {
       success: true,
@@ -1015,12 +1433,14 @@ export const PharmacyProvider = ({ children }) => {
       if (res.ok) {
         const resData = await res.json();
         return { success: true, status: 'sent', resend_id: resData.id };
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        return { success: false, status: 'failed', error: errData.message || `Resend HTTP ${res.status}` };
       }
     } catch (fallbackErr) {
       console.warn('Direct Resend proxy attempt failed:', fallbackErr);
+      return { success: false, status: 'failed', error: fallbackErr.message };
     }
-
-    return { success: true, status: 'sent', resend_id: 're_mock_sample' };
   };
 
   const resendInvoiceEmail = async (invoiceId) => {
@@ -1058,15 +1478,33 @@ export const PharmacyProvider = ({ children }) => {
       created_at: new Date().toISOString(),
     };
     setEmailLogs(prev => [newLog, ...prev]);
+
+    if (isSupabaseConfigured && pharmacy?.id && isValidUUID(inv.id)) {
+      try {
+        await supabase.from('invoices').update({ status: newStatus }).eq('id', inv.id);
+        await supabase.from('email_logs').insert({
+          pharmacy_id: pharmacy.id,
+          invoice_id: inv.id,
+          recipient_email: inv.customer_email,
+          status: emailRes.success ? 'sent' : 'failed',
+          error_message: emailRes.error || null,
+        });
+      } catch (elErr) {
+        console.warn('Could not record to email_logs in Supabase:', elErr);
+      }
+    }
     syncLocalStore();
 
     return emailRes;
   };
 
   const addSupplier = async (supplierData) => {
-    const newSupplier = {
-      id: `sup-${Date.now()}`,
-      pharmacy_id: pharmacy?.id || 'ph-001',
+    const newId = generateUUID();
+    const activePharmacyId = (pharmacy?.id && isValidUUID(pharmacy.id)) ? pharmacy.id : null;
+
+    let newSupplier = {
+      id: newId,
+      pharmacy_id: activePharmacyId || '00000000-0000-0000-0000-000000000001',
       ...supplierData,
       created_at: new Date().toISOString(),
     };
@@ -1074,10 +1512,10 @@ export const PharmacyProvider = ({ children }) => {
     setSuppliers(next);
     syncLocalStore({ suppliers: next });
 
-    if (isSupabaseConfigured && user && pharmacy?.id) {
+    if (isSupabaseConfigured && activePharmacyId) {
       try {
         const { data } = await supabase.from('suppliers').insert({
-          pharmacy_id: pharmacy.id,
+          pharmacy_id: activePharmacyId,
           name: supplierData.name,
           contact_person: supplierData.contact_person,
           phone: supplierData.phone,
@@ -1086,7 +1524,7 @@ export const PharmacyProvider = ({ children }) => {
           gst_number: supplierData.gst_number,
         }).select().single();
         if (data) {
-          newSupplier.id = data.id;
+          newSupplier = data;
         }
       } catch (e) {
         console.warn('Supabase addSupplier sync notice:', e);
@@ -1141,6 +1579,8 @@ export const PharmacyProvider = ({ children }) => {
           reference_id: 'ADJ-MANUAL',
           notes: reason,
         });
+
+        await loadSupabaseData(user.id, pharmacy.id);
       } catch (e) {
         console.warn('Supabase adjustStock sync notice:', e);
       }
@@ -1192,6 +1632,8 @@ export const PharmacyProvider = ({ children }) => {
           reference_id: `EXP-BATCH-${bat?.batch_number}`,
           notes: `Written off expired batch stock (${removedCount} pieces)`,
         });
+
+        await loadSupabaseData(user.id, pharmacy.id);
       } catch (e) {
         console.warn('Supabase markBatchExpired sync notice:', e);
       }
@@ -1202,9 +1644,18 @@ export const PharmacyProvider = ({ children }) => {
   const todayStr = new Date().toISOString().split('T')[0];
   const thresholdDays = pharmacy?.near_expiry_threshold_days || 30;
 
+  const isSameDay = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() &&
+           d.getMonth() === now.getMonth() &&
+           d.getDate() === now.getDate();
+  };
+
   const totalSalesAmount = sales.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
   const todaySalesAmount = sales
-    .filter(s => s.created_at?.startsWith(todayStr))
+    .filter(s => isSameDay(s.created_at) || s.created_at?.startsWith(todayStr))
     .reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
 
   const totalStockPieces = inventory.reduce((acc, i) => acc + Number(i.total_pieces || 0), 0);
@@ -1244,7 +1695,7 @@ export const PharmacyProvider = ({ children }) => {
   });
 
   const lowStockItems = inventory
-    .filter(i => i.total_pieces > 0 && i.total_pieces <= (i.min_stock_pieces || 20))
+    .filter(i => Number(i.total_pieces || 0) <= Number(i.min_stock_pieces !== undefined && i.min_stock_pieces !== null ? i.min_stock_pieces : 20))
     .map(i => {
       const med = medicines.find(m => m.id === i.medicine_id);
       const bat = batches.find(b => b.id === i.batch_id);
@@ -1254,8 +1705,8 @@ export const PharmacyProvider = ({ children }) => {
         strength: med?.strength,
         batch_number: bat?.batch_number,
         expiry_date: bat?.expiry_date,
-        available_strips: Math.floor(i.total_pieces / i.pieces_per_strip),
-        loose_pieces: i.total_pieces % i.pieces_per_strip,
+        available_strips: Math.floor(Number(i.total_pieces || 0) / (i.pieces_per_strip || 10)),
+        loose_pieces: Number(i.total_pieces || 0) % (i.pieces_per_strip || 10),
       };
     });
 

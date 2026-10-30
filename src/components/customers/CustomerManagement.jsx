@@ -25,8 +25,8 @@ export const CustomerManagement = () => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return true;
     return (
-      c.name.toLowerCase().includes(q) ||
-      c.phone.includes(q) ||
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(q) ||
       (c.email && c.email.toLowerCase().includes(q))
     );
   });

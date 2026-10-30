@@ -18,12 +18,16 @@ export const StockMovements = () => {
 
   const filteredMovements = stockMovements.filter(m => {
     const q = searchTerm.toLowerCase().trim();
+    const medName = m.medicine_name || '';
+    const bNumber = m.batch_number || '';
+    const refId = m.reference_id || '';
+    const notes = m.notes || '';
     const matchesSearch = 
       !q ||
-      m.medicine_name.toLowerCase().includes(q) ||
-      m.batch_number.toLowerCase().includes(q) ||
-      (m.reference_id && m.reference_id.toLowerCase().includes(q)) ||
-      (m.notes && m.notes.toLowerCase().includes(q));
+      medName.toLowerCase().includes(q) ||
+      bNumber.toLowerCase().includes(q) ||
+      refId.toLowerCase().includes(q) ||
+      notes.toLowerCase().includes(q);
 
     const matchesType = filterType === 'all' || m.movement_type === filterType;
 

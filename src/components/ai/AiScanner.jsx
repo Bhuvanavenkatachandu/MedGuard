@@ -194,46 +194,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     setVerifiedData(preset.data);
   };
 
-  const DEMO_SCANS = [
-    {
-      title: 'Dolo 650 Strip (Clear)',
-      url: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80',
-      confidence: 94,
-      needsVerification: false,
-      issues: ['No packaging anomalies detected.'],
-      data: {
-        medicine_name: 'Dolo 650',
-        generic_name: 'Paracetamol Tablets IP',
-        brand: 'Micro Labs',
-        strength: '650mg',
-        manufacturer: 'Micro Labs Limited',
-        batch_number: 'DL-9941X',
-        manufacturing_date: '2025-02-15',
-        expiry_date: '2027-01-31',
-        pieces_per_strip: 15,
-        price_per_strip: 34.00,
-      }
-    },
-    {
-      title: 'Blurry Box (Needs Verification)',
-      url: 'https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=600&auto=format&fit=crop&q=80',
-      confidence: 48,
-      needsVerification: true,
-      issues: ['Blurry packaging detected', 'Batch number text faint or partially obscured'],
-      data: {
-        medicine_name: 'Cetriz 10',
-        generic_name: 'Cetirizine Hydrochloride',
-        brand: 'Dr. Reddy',
-        strength: '10mg',
-        manufacturer: 'Dr. Reddy\'s Laboratories',
-        batch_number: 'CTZ-???',
-        manufacturing_date: '',
-        expiry_date: '',
-        pieces_per_strip: 10,
-        price_per_strip: 45.00,
-      }
-    }
-  ];
+  const DEMO_SCANS = [];
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -326,22 +287,24 @@ export const AiScanner = ({ onProceedToAddStock }) => {
             </button>
 
             {/* Quick Demo Pre-sets */}
-            <div className="pt-3 border-t border-slate-100">
-              <span className="text-[10px] text-slate-400 font-semibold block mb-2">Or load a demo scan:</span>
-              <div className="flex flex-col gap-1.5">
-                {DEMO_SCANS.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleLoadDemoImage(preset)}
-                    className="text-left text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 flex items-center justify-between transition-colors"
-                  >
-                    <span>{preset.title}</span>
-                    <span className="text-[10px] font-mono text-blue-600">{preset.confidence}% conf</span>
-                  </button>
-                ))}
+            {DEMO_SCANS.length > 0 && (
+              <div className="pt-3 border-t border-slate-100">
+                <span className="text-[10px] text-slate-400 font-semibold block mb-2">Or load a demo scan:</span>
+                <div className="flex flex-col gap-1.5">
+                  {DEMO_SCANS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleLoadDemoImage(preset)}
+                      className="text-left text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 flex items-center justify-between transition-colors"
+                    >
+                      <span>{preset.title}</span>
+                      <span className="text-[10px] font-mono text-blue-600">{preset.confidence}% conf</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

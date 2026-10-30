@@ -45,8 +45,12 @@ export const PharmacistLogin = () => {
   const handleQuickDemoLogin = () => {
     setLoading(true);
     setTimeout(() => {
-      loginWithDemoSession();
-      navigate('/pharmacist/dashboard');
+      const res = loginWithDemoSession();
+      if (res?.isSetupComplete) {
+        navigate('/pharmacist/dashboard');
+      } else {
+        navigate('/pharmacist/setup');
+      }
     }, 400);
   };
 
@@ -86,7 +90,7 @@ export const PharmacistLogin = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="pharmacist@apollopharmacy.com"
+                  placeholder="pharmacist@yourpharmacy.com"
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>

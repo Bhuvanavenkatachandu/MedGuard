@@ -89,7 +89,7 @@ export const PointOfSale = () => {
 
       const hasStock = validBatches.some(b => {
         const inv = inventory.find(i => i.batch_id === b.id);
-        return inv && inv.total_pieces > 0;
+        return inv && Number(inv.total_pieces) > 0;
       });
 
       if (!hasStock) return false;
@@ -112,7 +112,7 @@ export const PointOfSale = () => {
         .filter(b => b.medicine_id === selectedMedicine.id && b.expiry_date >= todayStr)
         .filter(b => {
           const inv = inventory.find(i => i.batch_id === b.id);
-          return inv && inv.total_pieces > 0;
+          return inv && Number(inv.total_pieces) > 0;
         })
         .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)); // FEFO: Earliest expiry first!
 
@@ -192,6 +192,43 @@ export const PointOfSale = () => {
     setSelectedQty(1);
   };
 
+  const handleUpdateCartQty = (index, delta) => {
+    const item = cartItems[index];
+    if (!item) return;
+
+    const newQty = item.quantity_units + delta;
+    if (newQty <= 0) {
+      handleRemoveFromCart(index);
+      return;
+    }
+
+    const inv = inventory.find(i => i.batch_id === item.batch_id);
+    const maxPieces = inv?.total_pieces || 0;
+    const piecesPerStrip = item.pieces_per_strip || 10;
+    const newPieces = item.unit_type === 'strip' ? newQty * piecesPerStrip : newQty;
+
+    // Calculate pieces taken by other items with the same batch
+    const otherPieces = cartItems
+      .filter((it, idx) => idx !== index && it.batch_id === item.batch_id)
+      .reduce((acc, it) => acc + it.pieces_count, 0);
+
+    if (otherPieces + newPieces > maxPieces) {
+      setErrorMessage(`Cannot exceed available batch stock of ${maxPieces} pieces for ${item.medicine_name}.`);
+      return;
+    }
+
+    setErrorMessage(null);
+    setCartItems(cartItems.map((it, idx) => {
+      if (idx !== index) return it;
+      return {
+        ...it,
+        quantity_units: newQty,
+        pieces_count: newPieces,
+        total_price: Math.round(newQty * it.unit_price * 100) / 100,
+      };
+    }));
+  };
+
   const handleRemoveFromCart = (index) => {
     setCartItems(cartItems.filter((_, idx) => idx !== index));
   };
@@ -206,6 +243,7 @@ export const PointOfSale = () => {
   // Checkout & Sale Confirmation
   const handleCheckout = async (e) => {
     e.preventDefault();
+    if (processing) return;
     setErrorMessage(null);
 
     if (cartItems.length === 0) {
@@ -511,19 +549,55 @@ export const PointOfSale = () => {
                     <label className="block font-semibold text-slate-700 mb-1">
                       Quantity ({selectedUnitType})
                     </label>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedQty((prev) => Math.max(1, (parseInt(prev, 10) || 1) - 1))}
+                        className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center transition-colors shadow-xs"
+                        title="Decrease quantity"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
                       <input
                         type="number"
                         min="1"
                         max={selectedUnitType === 'strip' ? maxAvailableStrips : maxAvailablePieces}
                         value={selectedQty}
-                        onChange={(e) => setSelectedQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setSelectedQty('');
+                          } else {
+                            const parsed = parseInt(val, 10);
+                            if (!isNaN(parsed)) {
+                              const maxLimit = selectedUnitType === 'strip' ? maxAvailableStrips : maxAvailablePieces;
+                              setSelectedQty(Math.min(maxLimit || 9999, Math.max(1, parsed)));
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (selectedQty === '' || isNaN(parseInt(selectedQty, 10)) || parseInt(selectedQty, 10) < 1) {
+                            setSelectedQty(1);
+                          }
+                        }}
+                        className="w-20 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 text-center focus:outline-none focus:border-blue-500 font-mono shadow-xs"
                       />
                       <button
                         type="button"
+                        onClick={() => {
+                          const maxLimit = selectedUnitType === 'strip' ? maxAvailableStrips : maxAvailablePieces;
+                          setSelectedQty((prev) => Math.min(maxLimit || 1, (parseInt(prev, 10) || 0) + 1));
+                        }}
+                        className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center transition-colors shadow-xs"
+                        title="Increase quantity"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleAddToCart}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap shadow-sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs whitespace-nowrap shadow-sm ml-auto"
                       >
                         Add to Cart
                       </button>
@@ -572,21 +646,45 @@ export const PointOfSale = () => {
                   </div>
                 ) : (
                   cartItems.map((item, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900">{item.medicine_name}</div>
+                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-slate-900 truncate">{item.medicine_name}</div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          Batch: {item.batch_number} • {item.quantity_units} {item.unit_type}(s) ({item.pieces_count} pcs)
+                          Batch: {item.batch_number} • {item.unit_type}(s) ({item.pieces_count} pcs)
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-slate-900">
+                      <div className="flex items-center gap-2">
+                        {/* Inline increment/decrement */}
+                        <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden shadow-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateCartQty(idx, -1)}
+                            className="px-1.5 py-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                            title="Decrease quantity"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="px-2 font-mono font-bold text-slate-800 text-[11px] min-w-[20px] text-center">
+                            {item.quantity_units}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateCartQty(idx, 1)}
+                            className="px-1.5 py-1 text-slate-600 hover:bg-slate-200 transition-colors"
+                            title="Increase quantity"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <span className="font-bold text-slate-900 font-mono w-16 text-right">
                           ₹{item.total_price.toFixed(2)}
                         </span>
                         <button
                           onClick={() => handleRemoveFromCart(idx)}
                           className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          title="Remove item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

@@ -82,11 +82,32 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
     );
   };
 
-  // Get all registered pharmacies from store
-  const allPharmacies = useMemo(() => {
-    const store = getLocalStore();
-    return store.pharmacies || [store.pharmacy];
+  const [registeredPharmacies, setRegisteredPharmacies] = useState([]);
+
+  useEffect(() => {
+    const fetchPharmacies = async () => {
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase.from('pharmacies').select('*');
+          if (!error && data && data.length > 0) {
+            setRegisteredPharmacies(data);
+            return;
+          }
+        } catch (e) {
+          console.warn('Could not fetch pharmacies from Supabase:', e);
+        }
+      }
+      const store = getLocalStore();
+      const list = (store.pharmacies && store.pharmacies.length > 0)
+        ? store.pharmacies
+        : (store.pharmacy ? [store.pharmacy] : []);
+      setRegisteredPharmacies(list.filter(Boolean));
+    };
+
+    fetchPharmacies();
   }, []);
+
+  const allPharmacies = registeredPharmacies;
 
   // Search & Filter algorithm strictly according to specifications:
   // 1. Matches name, brand, generic_name, or strength

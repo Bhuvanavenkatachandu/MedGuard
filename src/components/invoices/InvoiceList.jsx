@@ -22,8 +22,8 @@ export const InvoiceList = () => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return true;
     return (
-      inv.invoice_number.toLowerCase().includes(q) ||
-      inv.customer_name.toLowerCase().includes(q) ||
+      (inv.invoice_number || '').toLowerCase().includes(q) ||
+      (inv.customer_name || '').toLowerCase().includes(q) ||
       (inv.customer_phone && inv.customer_phone.toLowerCase().includes(q)) ||
       (inv.customer_email && inv.customer_email.toLowerCase().includes(q))
     );

@@ -163,7 +163,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "MedGuard Invoices <invoices@resend.dev>",
+        from: "MedGuard Invoices <onboarding@resend.dev>",
         to: [recipient_email],
         subject: `Your Pharmacy Invoice: ${invoice_number} from ${pharmacy_name || 'MedGuard'}`,
         html: emailHtml,
