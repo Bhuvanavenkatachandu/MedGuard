@@ -187,13 +187,6 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Search Session Badge */}
-            <div className="hidden md:flex items-center gap-2 bg-slate-100 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Session: <strong className="text-slate-800">{searchSessionId}</strong></span>
-              <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded ml-1">No Login</span>
-            </div>
-
             <button
               onClick={() => {
                 if (onSwitchToPharmacist) onSwitchToPharmacist();
