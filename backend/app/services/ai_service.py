@@ -165,7 +165,7 @@ async def scan_medicine_image(
         pharmacy_id=pharmacy_id,
         image_url=image_url or "base64_upload",
         raw_response=extracted_content or error_msg,
-        extracted_data=json.dumps(extracted_data),
+        extracted_data=extracted_data,
         confidence_score=confidence,
         status="completed" if extracted_content else "failed",
         error_message=error_msg if not extracted_content else None,

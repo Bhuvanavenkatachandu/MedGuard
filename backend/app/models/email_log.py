@@ -20,6 +20,10 @@ class EmailLog(Base):
     def resend_id(self):
         return self.message_id
 
+    @resend_id.setter
+    def resend_id(self, value):
+        self.message_id = value
+
     # Relationships
     pharmacy = relationship("Pharmacy", back_populates="email_logs")
     invoice = relationship("Invoice", back_populates="email_logs")

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="allow"
     )
 
-    DATABASE_URL: str = f"sqlite:///{BACKEND_DIR}/data/medguard.db"
+    DATABASE_URL: str = "postgresql://localhost:5432/medguard"
     JWT_SECRET: str = "medguard_secret_jwt_key_super_secure_random_string_2026"
     JWT_SECRET_KEY: str = "medguard_secret_jwt_key_super_secure_random_string_2026"
     JWT_ALGORITHM: str = "HS256"
@@ -34,11 +34,18 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
+    @property
+    def clean_database_url(self) -> str:
+        """
+        Normalize DATABASE_URL for SQLAlchemy.
+        Ensures postgres:// is mapped to postgresql:// (essential for Neon / Heroku URLs)
+        """
+        url = self.DATABASE_URL.strip()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        return url
+
 settings = Settings()
-# If DATABASE_URL was overridden by a relative sqlite url in .env, resolve to BACKEND_DIR
-if settings.DATABASE_URL.startswith("sqlite:///./"):
-    rel_path = settings.DATABASE_URL.replace("sqlite:///./", "")
-    settings.DATABASE_URL = f"sqlite:///{BACKEND_DIR}/{rel_path}"
 
 # If STORAGE_DIR is relative, resolve to BACKEND_DIR
 if settings.STORAGE_DIR.startswith("./"):

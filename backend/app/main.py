@@ -30,8 +30,13 @@ from backend.app.routers import (
     public,
 )
 
-# Auto-create SQLite database schema
-Base.metadata.create_all(bind=engine)
+from sqlalchemy import text
+
+# Auto-create database tables on startup if not already created
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as exc:
+    print(f"Warning: Database initialization error: {exc}")
 
 app = FastAPI(
     title="MedGuard AI API",
@@ -56,11 +61,19 @@ app.mount("/storage", StaticFiles(directory=str(storage_path)), name="storage")
 # Health Check Endpoint
 @app.get("/api/health", tags=["System"])
 def health_check():
+    db_status = "disconnected"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_status = "postgresql_connected" if "postgres" in settings.clean_database_url.lower() else "connected"
+    except Exception as exc:
+        db_status = f"error: {str(exc)}"
+
     return {
         "status": "ok",
         "service": "MedGuard AI Core Backend",
         "version": "2.0.0",
-        "database": "sqlite_connected",
+        "database": db_status,
     }
 
 # Register Routers

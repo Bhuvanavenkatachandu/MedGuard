@@ -41,6 +41,8 @@ backend/venv/
 .pytest_cache/
 
 # Databases & local storage
+data/
+*.db
 backend/data/*.db
 *.sqlite
 *.sqlite3
