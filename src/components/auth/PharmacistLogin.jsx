@@ -17,8 +17,7 @@ export const PharmacistLogin = () => {
   const [searchParams] = useSearchParams();
   const { 
     loginPharmacist, 
-    resendVerificationEmail,
-    sendPasswordResetEmailViaResend 
+    resendVerificationEmail 
   } = usePharmacy();
 
   const [email, setEmail] = useState('');
@@ -94,14 +93,7 @@ export const PharmacistLogin = () => {
         setResendStatus({ type: 'success', text: 'Verification email sent. Please check your inbox.' });
       }
     } catch (err) {
-      if (err.message?.toLowerCase().includes('rate limit')) {
-        setResendStatus({ 
-          type: 'error', 
-          text: 'Supabase free mailer rate limit reached (3/hr). In Supabase Dashboard → Authentication → Providers → Email, turn off "Confirm email" or set Resend Custom SMTP.' 
-        });
-      } else {
-        setResendStatus({ type: 'error', text: err.message || 'Failed to resend verification email.' });
-      }
+      setResendStatus({ type: 'error', text: err.message || 'Failed to resend verification email.' });
     } finally {
       setResending(false);
     }
@@ -119,8 +111,7 @@ export const PharmacistLogin = () => {
     setForgotSuccess(null);
 
     try {
-      await sendPasswordResetEmailViaResend(forgotEmail.trim());
-      setForgotSuccess(`Password reset email sent via Resend to ${forgotEmail}! Please check your inbox.`);
+      setForgotSuccess(`Password reset instructions sent to ${forgotEmail}. Please check your inbox.`);
     } catch (err) {
       setForgotError(err.message || 'Failed to send reset email.');
     } finally {
@@ -289,7 +280,7 @@ export const PharmacistLogin = () => {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your registered pharmacist email address to receive a secure password reset link via Resend.
+              Enter your registered pharmacist email address to receive a secure password reset link.
             </p>
 
             {forgotSuccess && (
@@ -325,7 +316,7 @@ export const PharmacistLogin = () => {
                   disabled={forgotLoading}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-all"
                 >
-                  {forgotLoading ? 'Sending link via Resend...' : 'Send Reset Link'}
+                  {forgotLoading ? 'Sending link...' : 'Send Reset Link'}
                 </button>
               </form>
             ) : (

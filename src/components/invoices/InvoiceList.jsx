@@ -60,7 +60,7 @@ export const InvoiceList = () => {
       if (res.success) {
         alert(`Invoice successfully emailed to ${invoice.customer_email}!`);
       } else {
-        alert(`Email failed: ${res.error || 'Check Resend API key.'}`);
+        alert(`Email failed: ${res.error || 'Check SMTP mail server settings.'}`);
       }
     } catch (e) {
       alert(`Error resending email: ${e.message}`);
@@ -83,7 +83,7 @@ export const InvoiceList = () => {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Archived sales invoices with PDF retrieval and Resend email tracking.
+            Archived sales invoices with PDF retrieval and automated email tracking.
           </p>
         </div>
 

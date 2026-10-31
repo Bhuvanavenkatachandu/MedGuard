@@ -296,7 +296,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
         });
         alert('Invoice re-sent successfully!');
       } else {
-        alert(`Failed to resend: ${res.error || 'Check Resend API key.'}`);
+        alert(`Failed to resend: ${res.error || 'Check email configuration.'}`);
       }
     } catch (e) {
       alert(`Email error: ${e.message}`);
@@ -374,7 +374,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            FEFO batch recommendation, atomic stock deduction, instant PDF invoice, and Resend email delivery.
+            FEFO batch recommendation, atomic stock deduction, instant PDF invoice, and automated email delivery.
           </p>
         </div>
 
@@ -804,7 +804,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                     {completedSale.emailStatus === 'sent' 
                       ? `Invoice emailed to ${completedSale?.sale?.customer_email || completedSale?.customer_email}` 
                       : completedSale.emailStatus === 'failed' 
-                      ? 'Email failed (Resend delivery error)' 
+                      ? 'Email delivery failed (Check mail configuration)' 
                       : 'No email provided by customer'}
                   </span>
                 </span>

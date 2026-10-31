@@ -1,6 +1,6 @@
 # MedGuard AI — High-Precision Retail Pharmacy Operating System & Public Discovery Engine
 
-**MedGuard AI** is a production-grade full-stack pharmacy operating system and medicine availability discovery engine. It bridges real-time pharmacy stock with customer geolocation discovery, automates medicine intake using Gemma 4 multimodal OCR, enforces First-Expired First-Out (FEFO) dispensing, guarantees atomic race-free checkout, and archives downloadable PDF tax invoices with Resend email delivery.
+**MedGuard AI** is a production-grade full-stack pharmacy operating system and medicine availability discovery engine. It bridges real-time pharmacy stock with customer geolocation discovery, automates medicine intake using Gemma 4 multimodal OCR, enforces First-Expired First-Out (FEFO) dispensing, guarantees atomic race-free checkout, and archives downloadable PDF tax invoices with automated email delivery.
 
 ---
 
@@ -18,7 +18,7 @@
 | **Inventory Source of Truth** | Internal truth is **total pieces**; derived dynamic values: `strips = total_pieces // pcs_per_strip`, `loose = total_pieces % pcs_per_strip` |
 | **Batch & FEFO Enforcement**| Automatic recommendation of the earliest expiring non-expired batch; zero dispensing permission for expired stock |
 | **PDF Invoices** | ReportLab backend PDF generator (`/api/invoices/{id}/pdf`) and client jsPDF fallback |
-| **Email Invoices** | Non-blocking Resend email delivery service (`email_service.py`) with full delivery logs |
+| **Email Invoices** | Non-blocking SMTP email delivery service (`email_service.py`) with full delivery logs |
 | **Audit Ledger** | Immutable `stock_movements` table recording every inward, sale, adjustment, and write-off |
 
 ---
@@ -46,7 +46,7 @@ MedGuard/
 │   │   │   ├── stock_movement.py       # Full immutable audit trail
 │   │   │   ├── ai_scan.py              # AI vision scan audit logs
 │   │   │   ├── search_session.py       # Public search analytics
-│   │   │   └── email_log.py            # Resend email delivery status
+│   │   │   └── email_log.py            # Automated email delivery status
 │   │   ├── schemas/                    # Pydantic Schemas for validation & serialization
 │   │   ├── services/                   # Core business logic (FEFO, Sales, PDF, Email, Search, AI)
 │   │   └── routers/                    # REST API routes

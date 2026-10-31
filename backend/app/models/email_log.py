@@ -13,8 +13,12 @@ class EmailLog(Base):
     recipient_email = Column(String(255), nullable=False)
     status = Column(String(50), nullable=False)  # 'sent', 'failed', 'pending'
     error_message = Column(Text, nullable=True)
-    resend_id = Column(String(100), nullable=True)
+    message_id = Column("resend_id", String(100), nullable=True)  # email tracking ID
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def resend_id(self):
+        return self.message_id
 
     # Relationships
     pharmacy = relationship("Pharmacy", back_populates="email_logs")

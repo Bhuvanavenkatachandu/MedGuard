@@ -67,11 +67,7 @@ export const PharmacistRegister = () => {
       setRegisteredEmail(email.trim());
       setShowVerifyModal(true);
     } catch (err) {
-      if (err.message?.toLowerCase().includes('rate limit')) {
-        setErrorMessage('Supabase free mailer rate limit reached (3/hour). To fix: In Supabase Dashboard → Authentication → Providers → Email, toggle OFF "Confirm email" for instant registration, or configure Resend Custom SMTP.');
-      } else {
-        setErrorMessage(err.message || 'Registration failed. Please try again.');
-      }
+      setErrorMessage(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }

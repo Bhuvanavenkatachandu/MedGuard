@@ -182,7 +182,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold py-1.5 px-3 rounded-lg transition-all"
-                title="Sign out of Supabase pharmacist session"
+                title="Sign out of pharmacist session"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Sign Out / Logout</span>
@@ -239,7 +239,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
-              title="Sign out of Supabase pharmacist session"
+              title="Sign out of pharmacist session"
             >
               <LogOut className="w-3.5 h-3.5 text-rose-500" />
               <span>Logout</span>

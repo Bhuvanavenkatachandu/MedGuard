@@ -70,7 +70,7 @@ def get_email_logs(
             "recipient_email": l.recipient_email,
             "status": l.status,
             "error_message": l.error_message,
-            "resend_id": l.resend_id,
+            "message_id": getattr(l, 'message_id', None),
             "created_at": l.created_at.isoformat() if l.created_at else None,
         })
     return results
