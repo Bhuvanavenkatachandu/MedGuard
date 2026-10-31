@@ -49,3 +49,4 @@ backend/data/*.db
 backend/storage/*
 !backend/storage/.gitkeep
 backend/data/.gitkeep
+.neon
