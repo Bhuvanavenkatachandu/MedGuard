@@ -18,16 +18,21 @@ import {
 
 export const PharmacySetup = () => {
   const navigate = useNavigate();
-  const { user, profile, pharmacy, setupPharmacy, isSetupComplete } = usePharmacy();
+  const { user, profile, pharmacy, setupPharmacy, isSetupComplete, isEmailVerified } = usePharmacy();
 
   // If already completed setup, redirect to dashboard
   if (isSetupComplete) {
     return <Navigate to="/pharmacist/dashboard" replace />;
   }
 
-  // If not logged in at all, redirect to register
+  // If not logged in at all, redirect to login
   if (!user && !profile) {
-    return <Navigate to="/pharmacist/register" replace />;
+    return <Navigate to="/pharmacist/login" replace />;
+  }
+
+  // If email is not verified, redirect to login interface
+  if (!isEmailVerified) {
+    return <Navigate to="/pharmacist/login?unverified=true" replace />;
   }
 
   // Pharmacy Details State
@@ -94,7 +99,7 @@ export const PharmacySetup = () => {
 
     try {
       // Step 4: Create Pharmacy & Associate with Logged-in Pharmacist
-      await setupPharmacy({
+      const res = await setupPharmacy({
         name: shopName.trim(),
         ownerName: ownerName.trim(),
         phone: phone.trim(),
@@ -109,7 +114,9 @@ export const PharmacySetup = () => {
       });
 
       // On completion, open the dashboard
-      navigate('/pharmacist/dashboard');
+      if (res?.success) {
+        navigate('/pharmacist/dashboard', { replace: true });
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Failed to complete pharmacy setup.');
     } finally {
@@ -178,7 +185,7 @@ export const PharmacySetup = () => {
                     required
                     value={shopName}
                     onChange={(e) => setShopName(e.target.value)}
-                    placeholder="e.g. Apollo Care Pharmacy - Indiranagar"
+                    placeholder="e.g. Care Pharmacy"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-semibold placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -195,7 +202,7 @@ export const PharmacySetup = () => {
                     required
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
-                    placeholder="Dr. Rajesh Sharma"
+                    placeholder="Owner / Pharmacist Full Name"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -212,7 +219,7 @@ export const PharmacySetup = () => {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
+                    placeholder="10-digit mobile number"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -228,7 +235,7 @@ export const PharmacySetup = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="pharmacy@medguard.io"
+                    placeholder="pharmacy@example.com"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -245,7 +252,7 @@ export const PharmacySetup = () => {
                     required
                     value={licenseNumber}
                     onChange={(e) => setLicenseNumber(e.target.value)}
-                    placeholder="DL-KA-2026-88741"
+                    placeholder="e.g. DL-KA-2026-XXXXX"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -262,7 +269,7 @@ export const PharmacySetup = () => {
                     required
                     value={fullAddress}
                     onChange={(e) => setFullAddress(e.target.value)}
-                    placeholder="100 Feet Rd, HAL 2nd Stage, Indiranagar"
+                    placeholder="Street / Shop Address"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -334,7 +341,7 @@ export const PharmacySetup = () => {
               disabled={loading || !isLocationConfirmed}
               className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2"
             >
-              <span>{loading ? 'Creating Pharmacy...' : 'Complete Setup & Open Dashboard'}</span>
+              <span>{loading ? 'Saving Pharmacy...' : 'Save Pharmacy & Continue'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { 
   Search, 
@@ -10,29 +9,20 @@ import {
   CheckCircle2, 
   Layers, 
   Edit3, 
+  Trash2,
   Clock, 
   ChevronDown
 } from 'lucide-react';
 
 export const InventoryList = ({ setActiveTab }) => {
-  const { inventory, medicines, batches, adjustStock } = usePharmacy();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const urlFilter = searchParams.get('filter');
+  const { inventory, medicines, batches, adjustStock, deleteInventoryItem } = usePharmacy();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState(urlFilter || 'all');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'expired'
   const [editingItem, setEditingItem] = useState(null);
   const [adjustPieces, setAdjustPieces] = useState('');
   const [adjustReason, setAdjustReason] = useState('Stock count correction');
 
   const todayStr = new Date().toISOString().split('T')[0];
-
-  // Sync state if URL query param changes
-  useEffect(() => {
-    const f = searchParams.get('filter');
-    if (f && f !== statusFilter) {
-      setStatusFilter(f);
-    }
-  }, [searchParams]);
 
   // Enriched inventory items with computed strip and piece metrics
   const enrichedInventory = useMemo(() => {
@@ -40,16 +30,15 @@ export const InventoryList = ({ setActiveTab }) => {
       const med = medicines.find(m => m.id === inv.medicine_id) || {};
       const batch = batches.find(b => b.id === inv.batch_id) || {};
       const piecesPerStrip = inv.pieces_per_strip || med.pieces_per_strip || 10;
-      const totalPieces = Number(inv.total_pieces || 0);
-      const minStock = Number(inv.min_stock_pieces !== undefined && inv.min_stock_pieces !== null ? inv.min_stock_pieces : 20);
+      const totalPieces = inv.total_pieces || 0;
 
       // STRICT REQUIREMENT FORMULA:
       const availableStrips = Math.floor(totalPieces / piecesPerStrip);
       const loosePieces = totalPieces % piecesPerStrip;
 
       const isExpired = batch.expiry_date && batch.expiry_date < todayStr;
+      const isLowStock = !isExpired && totalPieces > 0 && totalPieces <= (inv.min_stock_pieces || 20);
       const isOutOfStock = totalPieces === 0;
-      const isLowStock = !isExpired && (totalPieces <= minStock);
 
       let status = 'in_stock';
       if (isExpired) status = 'expired';
@@ -69,8 +58,6 @@ export const InventoryList = ({ setActiveTab }) => {
         piecesPerStrip,
         availableStrips,
         loosePieces,
-        total_pieces: totalPieces,
-        min_stock_pieces: minStock,
         status,
       };
     });
@@ -87,17 +74,9 @@ export const InventoryList = ({ setActiveTab }) => {
         item.batch_number.toLowerCase().includes(query) ||
         item.strength.toLowerCase().includes(query);
 
-      let matchesStatus = false;
-      if (statusFilter === 'all') {
-        matchesStatus = true;
-      } else if (statusFilter === 'low_stock') {
-        // Low stock filter includes both low stock items and out of stock items (urgent reorder)
-        matchesStatus = item.status === 'low_stock' || item.status === 'out_of_stock' || item.total_pieces <= item.min_stock_pieces;
-      } else if (statusFilter === 'out_of_stock') {
-        matchesStatus = item.total_pieces === 0 || item.status === 'out_of_stock';
-      } else {
-        matchesStatus = item.status === statusFilter;
-      }
+      const matchesStatus = 
+        statusFilter === 'all' || 
+        item.status === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
@@ -157,20 +136,11 @@ export const InventoryList = ({ setActiveTab }) => {
             { id: 'all', label: 'All Items' },
             { id: 'in_stock', label: 'In Stock' },
             { id: 'low_stock', label: 'Low Stock' },
-            { id: 'out_of_stock', label: 'Out of Stock' },
             { id: 'expired', label: 'Expired' },
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => {
-                setStatusFilter(tab.id);
-                if (tab.id === 'all') {
-                  searchParams.delete('filter');
-                  setSearchParams(searchParams, { replace: true });
-                } else {
-                  setSearchParams({ filter: tab.id }, { replace: true });
-                }
-              }}
+              onClick={() => setStatusFilter(tab.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
                 statusFilter === tab.id
                   ? 'bg-slate-900 text-white'
@@ -296,16 +266,29 @@ export const InventoryList = ({ setActiveTab }) => {
 
                     {/* Action Button */}
                     <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={() => {
-                          setEditingItem(item);
-                          setAdjustPieces(item.total_pieces.toString());
-                        }}
-                        className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-colors"
-                        title="Adjust Total Pieces"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingItem(item);
+                            setAdjustPieces(item.total_pieces.toString());
+                          }}
+                          className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-colors"
+                          title="Adjust Total Pieces"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to remove ${item.medicine_name} (Batch: ${item.batch_number}) from inventory?`)) {
+                              deleteInventoryItem(item.id);
+                            }
+                          }}
+                          className="p-1.5 hover:bg-rose-100 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Delete Item from Inventory"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

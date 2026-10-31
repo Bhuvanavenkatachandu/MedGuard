@@ -23,6 +23,27 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
+# Environment files (Never commit API keys or secrets)
 .env
-.env.production
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+*.env
+
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+backend/venv/
+.pytest_cache/
+
+# Databases & local storage
+backend/data/*.db
+*.sqlite
+*.sqlite3
+backend/storage/*
+!backend/storage/.gitkeep
+backend/data/.gitkeep

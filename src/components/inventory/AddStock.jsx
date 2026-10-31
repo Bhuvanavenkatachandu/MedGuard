@@ -28,8 +28,8 @@ export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
   const [mfgDate, setMfgDate] = useState(initialData?.manufacturing_date || '');
   const [expiryDate, setExpiryDate] = useState(initialData?.expiry_date || '');
   const [piecesPerStrip, setPiecesPerStrip] = useState(initialData?.pieces_per_strip || 10);
-  const [quantityStrips, setQuantityStrips] = useState(10);
-  const [pricePerStrip, setPricePerStrip] = useState(initialData?.price_per_strip || 100);
+  const [quantityStrips, setQuantityStrips] = useState('');
+  const [pricePerStrip, setPricePerStrip] = useState(initialData?.price_per_strip || '');
   const [minStockPieces, setMinStockPieces] = useState(20);
 
   const [loading, setLoading] = useState(false);
@@ -105,7 +105,8 @@ export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
       
       // Reset form fields
       setBatchNumber('');
-      setQuantityStrips(10);
+      setQuantityStrips('');
+      setPricePerStrip('');
 
       if (onDone) {
         setTimeout(onDone, 1200);

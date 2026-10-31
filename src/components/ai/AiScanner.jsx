@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { aiApi } from '../../api/aiApi';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { 
   Camera, 
@@ -60,7 +60,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     reader.readAsDataURL(file);
   };
 
-  // Run AI Analysis via Supabase Edge Function or realistic local simulation
+  // Run AI Analysis via backend Gemma 4 Vision API endpoint
   const handleRunAiScan = async () => {
     if (!imageBase64) {
       setErrorMessage('Please upload or take a photo of a medicine package first.');
@@ -71,74 +71,13 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     setErrorMessage(null);
 
     try {
-      if (isSupabaseConfigured) {
-        // Upload image to Supabase Storage bucket 'medicine-scans'
-        let storageUrl = null;
-        try {
-          const fileName = `scan_${Date.now()}.jpg`;
-          // Convert base64 to blob
-          const res = await fetch(imageBase64);
-          const blob = await res.blob();
-          const { data: uploadData } = await supabase.storage
-            .from('medicine-scans')
-            .upload(fileName, blob, { contentType: 'image/jpeg' });
-          
-          if (uploadData) {
-            const { data: pUrl } = supabase.storage.from('medicine-scans').getPublicUrl(fileName);
-            storageUrl = pUrl.publicUrl;
-          }
-        } catch (stErr) {
-          console.warn('Storage upload notice (continuing with base64 payload):', stErr);
-        }
-
-        // Call Supabase Edge Function
-        const scanResponse = await fetch(`${supabase.supabaseUrl}/functions/v1/scan-medicine`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabase.supabaseKey,
-          },
-          body: JSON.stringify({
-            image_url: storageUrl,
-            image_base64: imageBase64,
-            pharmacy_id: pharmacy?.id,
-          }),
-        });
-
-        const data = await scanResponse.json();
-        processScanOutput(data);
-      } else {
-        // Realistic client-side simulation of Gemma 4 OCR analysis
-        await new Promise(r => setTimeout(r, 1400));
-        
-        // Simulates high-confidence extraction with proper verification flags
-        const mockExtraction = {
-          success: true,
-          confidence: 88,
-          needs_manual_verification: false,
-          extracted_data: {
-            medicine_name: 'Augmentin 625 Duo',
-            generic_name: 'Amoxicillin and Potassium Clavulanate Tablets IP',
-            brand: 'Augmentin',
-            strength: '625mg',
-            manufacturer: 'GlaxoSmithKline Pharmaceuticals Ltd',
-            batch_number: 'AUG-8821B',
-            manufacturing_date: '2025-06-01',
-            expiry_date: '2027-05-31',
-            pieces_per_strip: 10,
-            unit_of_measure: 'tablet',
-          },
-          issues: ['Please confirm batch number from physical foil embossing.'],
-        };
-        processScanOutput(mockExtraction);
-      }
+      const data = await aiApi.scanMedicine(imageBase64);
+      processScanOutput(data);
     } catch (err) {
-      console.error('Scan error:', err);
-      // Fallback gracefully so pharmacist can continue manually
-      setErrorMessage(`AI Scan service unavailable: ${err.message}. Pharmacist manual entry enabled.`);
+      console.warn('Backend AI scanner notice:', err);
       processScanOutput({
         success: false,
-        confidence: 25,
+        confidence: 30,
         needs_manual_verification: true,
         extracted_data: {
           medicine_name: '',
@@ -149,8 +88,9 @@ export const AiScanner = ({ onProceedToAddStock }) => {
           manufacturing_date: '',
           expiry_date: '',
           pieces_per_strip: 10,
+          price_per_strip: 50,
         },
-        issues: ['AI timeout or network failure. Manual verification required.'],
+        issues: [err.response?.data?.detail || err.message || 'Manual pharmacist verification required.'],
       });
     } finally {
       setAnalyzing(false);
@@ -170,7 +110,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
       manufacturing_date: ext.manufacturing_date || '',
       expiry_date: ext.expiry_date || '',
       pieces_per_strip: ext.pieces_per_strip || 10,
-      price_per_strip: 120,
+      price_per_strip: ext.price_per_strip || 50,
     });
   };
 
@@ -179,22 +119,6 @@ export const AiScanner = ({ onProceedToAddStock }) => {
       onProceedToAddStock(verifiedData);
     }
   };
-
-  // Sample quick test images (simulated presets for review)
-  const handleLoadDemoImage = (preset) => {
-    setImagePreview(preset.url);
-    setImageBase64(preset.url);
-    setScanResult({
-      success: true,
-      confidence: preset.confidence,
-      needs_manual_verification: preset.needsVerification,
-      extracted_data: preset.data,
-      issues: preset.issues,
-    });
-    setVerifiedData(preset.data);
-  };
-
-  const DEMO_SCANS = [];
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -208,11 +132,11 @@ export const AiScanner = ({ onProceedToAddStock }) => {
             AI Medicine Packaging Scanner
           </h1>
           <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-            Gemma 4 Vision
+            Google AI Studio
           </span>
         </div>
         <p className="text-xs text-slate-500 mt-1">
-          Upload medicine strips or packaging. Gemma 4 automatically extracts name, generic salt, batch number, and expiry date.
+          Upload medicine strips or packaging. Google AI Studio (Gemini Vision) automatically extracts name, generic salt, batch number, and expiry date.
         </p>
       </div>
 
@@ -280,31 +204,11 @@ export const AiScanner = ({ onProceedToAddStock }) => {
             <button
               onClick={handleRunAiScan}
               disabled={!imagePreview || analyzing}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20"
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
             >
               <Sparkles className={`w-4 h-4 ${analyzing ? 'animate-spin' : ''}`} />
-              <span>{analyzing ? 'Gemma 4 is analyzing packaging...' : 'Analyze with Gemma 4 Vision'}</span>
+              <span>{analyzing ? 'Gemma 4 AI is analyzing packaging...' : 'Analyze Packaging with Gemma 4'}</span>
             </button>
-
-            {/* Quick Demo Pre-sets */}
-            {DEMO_SCANS.length > 0 && (
-              <div className="pt-3 border-t border-slate-100">
-                <span className="text-[10px] text-slate-400 font-semibold block mb-2">Or load a demo scan:</span>
-                <div className="flex flex-col gap-1.5">
-                  {DEMO_SCANS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleLoadDemoImage(preset)}
-                      className="text-left text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 flex items-center justify-between transition-colors"
-                    >
-                      <span>{preset.title}</span>
-                      <span className="text-[10px] font-mono text-blue-600">{preset.confidence}% conf</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

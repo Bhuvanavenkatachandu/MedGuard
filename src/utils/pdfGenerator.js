@@ -1,6 +1,5 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
  * Generates a clean, professional pharmacy invoice PDF
@@ -212,42 +211,11 @@ export const generateInvoicePdf = ({
 };
 
 /**
- * Uploads generated invoice PDF to Supabase Storage bucket 'invoices'
+ * Creates a local download URL for the invoice PDF
  */
 export const uploadInvoicePdf = async (blob, invoiceNumber) => {
-  if (!isSupabaseConfigured) {
-    console.info('Supabase not configured: simulating invoice PDF upload.');
-    return {
-      success: true,
-      publicUrl: URL.createObjectURL(blob),
-    };
-  }
-
-  try {
-    const fileName = `${invoiceNumber}_${Date.now()}.pdf`;
-    const { data, error } = await supabase.storage
-      .from('invoices')
-      .upload(fileName, blob, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-
-    if (error) throw error;
-
-    const { data: publicUrlData } = supabase.storage
-      .from('invoices')
-      .getPublicUrl(fileName);
-
-    return {
-      success: true,
-      publicUrl: publicUrlData.publicUrl,
-    };
-  } catch (err) {
-    console.warn('Failed to upload PDF to Supabase Storage:', err);
-    return {
-      success: false,
-      publicUrl: null,
-      error: err.message,
-    };
-  }
+  return {
+    success: true,
+    publicUrl: URL.createObjectURL(blob),
+  };
 };

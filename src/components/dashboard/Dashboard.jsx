@@ -93,11 +93,11 @@ export const Dashboard = ({ setActiveTab }) => {
             </div>
           </div>
           <div className="text-2xl font-extrabold text-slate-900">
-            ₹{Number(metrics.todaySalesAmount).toFixed(2)}
+            ₹{Number(metrics?.todaySalesAmount || 0).toFixed(2)}
           </div>
           <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
             <TrendingUp className="w-3 h-3 text-emerald-500" />
-            <span>Total Lifetime: ₹{Number(metrics.totalSalesAmount).toFixed(2)}</span>
+            <span>Total Lifetime: ₹{Number(metrics?.totalSalesAmount || 0).toFixed(2)}</span>
           </p>
         </div>
 
@@ -110,10 +110,10 @@ export const Dashboard = ({ setActiveTab }) => {
             </div>
           </div>
           <div className="text-2xl font-extrabold text-slate-900">
-            {metrics.totalStockPieces.toLocaleString()}
+            {(metrics?.totalStockPieces || 0).toLocaleString()}
           </div>
           <p className="text-[11px] text-slate-400 mt-1">
-            Across {metrics.totalMedicinesCount} registered medicines
+            Across {metrics?.totalMedicinesCount || 0} registered medicines
           </p>
         </div>
 
@@ -129,17 +129,17 @@ export const Dashboard = ({ setActiveTab }) => {
             </div>
           </div>
           <div className="text-2xl font-extrabold text-amber-600">
-            {metrics.expiringSoonCount}
+            {metrics?.expiringSoonCount || 0}
           </div>
           <p className="text-[11px] text-amber-600/80 mt-1 flex items-center justify-between">
-            <span>Threshold: {metrics.thresholdDays} days</span>
+            <span>Threshold: {metrics?.thresholdDays || 30} days</span>
             <span className="font-semibold underline">FEFO Alert →</span>
           </p>
         </div>
 
         {/* Low Stock Items */}
         <div 
-          onClick={() => setActiveTab('inventory?filter=low_stock')}
+          onClick={() => setActiveTab('inventory')}
           className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm cursor-pointer hover:border-rose-300 transition-all"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
@@ -149,7 +149,7 @@ export const Dashboard = ({ setActiveTab }) => {
             </div>
           </div>
           <div className="text-2xl font-extrabold text-rose-600">
-            {metrics.lowStockCount}
+            {metrics?.lowStockCount || 0}
           </div>
           <p className="text-[11px] text-rose-600/80 mt-1 flex items-center justify-between">
             <span>Below minimum pieces</span>

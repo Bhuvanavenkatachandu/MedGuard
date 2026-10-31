@@ -15,14 +15,13 @@ import {
   ChevronRight,
   Info
 } from 'lucide-react';
-import { calculateDistanceKm, getGoogleMapsDirectionsUrl, DEMO_LOCATIONS } from '../../utils/geoUtils';
+import { calculateDistanceKm, getGoogleMapsDirectionsUrl } from '../../utils/geoUtils';
 import { usePharmacy } from '../../context/PharmacyContext';
-import { getLocalStore } from '../../lib/mockStore';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { publicApi } from '../../api/publicApi';
 
 export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
   const navigate = useNavigate();
-  const { medicines, inventory, batches } = usePharmacy();
+  const { user, medicines, inventory, batches, isAuthenticated, isEmailVerified, isSetupComplete } = usePharmacy();
   const [searchQuery, setSearchQuery] = useState('');
   
   // Default customer location (Indiranagar Metro, Bangalore)
@@ -39,153 +38,103 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
   // Temporary secure Search Session ID (NOT a transaction ID)
   const [searchSessionId, setSearchSessionId] = useState('');
 
-  useEffect(() => {
-    // Generate a temporary anonymous search session token
-    const token = `SS-${Math.floor(100000 + Math.random() * 900000)}`;
-    setSearchSessionId(token);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
-    // Write-only session logging (customers cannot read other sessions)
-    if (isSupabaseConfigured) {
-      supabase.from('search_sessions').insert({
-        session_token: token,
-        search_query: searchQuery || 'initial_discovery',
-        user_lat: userLocation.lat,
-        user_lng: userLocation.lng,
-      }).then(() => {}).catch(() => {});
-    }
-  }, []);
-
-  // Request browser geolocation
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by your browser.');
       return;
     }
-
     setLocating(true);
     setLocationError(null);
-
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        const { latitude, longitude } = pos.coords;
         setUserLocation({
-          name: 'My GPS Location',
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          name: `Current GPS (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+          lat: latitude,
+          lng: longitude,
         });
         setLocating(false);
       },
       (err) => {
+        setLocationError('Could not retrieve GPS location. Using default location.');
         setLocating(false);
-        setLocationError('Location permission denied or unavailable. You can choose a preset location below.');
       },
-      { timeout: 10000 }
+      { timeout: 10000, enableHighAccuracy: true }
     );
   };
 
-  const [registeredPharmacies, setRegisteredPharmacies] = useState([]);
-
   useEffect(() => {
-    const fetchPharmacies = async () => {
-      if (isSupabaseConfigured) {
-        try {
-          const { data, error } = await supabase.from('pharmacies').select('*');
-          if (!error && data && data.length > 0) {
-            setRegisteredPharmacies(data);
-            return;
-          }
-        } catch (e) {
-          console.warn('Could not fetch pharmacies from Supabase:', e);
-        }
-      }
-      const store = getLocalStore();
-      const list = (store.pharmacies && store.pharmacies.length > 0)
-        ? store.pharmacies
-        : (store.pharmacy ? [store.pharmacy] : []);
-      setRegisteredPharmacies(list.filter(Boolean));
-    };
+    // Generate a temporary anonymous search session token
+    const token = `SS-${Math.floor(100000 + Math.random() * 900000)}`;
+    setSearchSessionId(token);
 
-    fetchPharmacies();
+    publicApi.recordSearchSession({
+      sessionToken: token,
+      query: searchQuery || 'initial_discovery',
+      lat: userLocation.lat,
+      lng: userLocation.lng,
+    });
   }, []);
 
-  const allPharmacies = registeredPharmacies;
+  // Fetch verified medicines directly via backend REST endpoint
+  useEffect(() => {
+    let active = true;
+    setIsSearching(true);
 
-  // Search & Filter algorithm strictly according to specifications:
-  // 1. Matches name, brand, generic_name, or strength
-  // 2. Filters pharmacies where available stock in pieces > 0
-  // 3. Excludes zero-stock pharmacies
-  // 4. Sorts pharmacies by distance, nearest first
-  const searchResults = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-
-    // Map each medicine to available pharmacies with stock
-    const results = [];
-
-    // Filter matching medicines first
-    const matchedMeds = medicines.filter(med => {
-      if (!query) return true; // show all available medicines if no query
-      return (
-        (med.name && med.name.toLowerCase().includes(query)) ||
-        (med.brand && med.brand.toLowerCase().includes(query)) ||
-        (med.generic_name && med.generic_name.toLowerCase().includes(query)) ||
-        (med.strength && med.strength.toLowerCase().includes(query))
-      );
+    publicApi.searchMedicines({
+      query: searchQuery.trim(),
+      lat: userLocation.lat,
+      lng: userLocation.lng,
+      maxDistanceKm: 100,
+      sessionToken: searchSessionId,
+    }).then((data) => {
+      if (!active) return;
+      setIsSearching(false);
+      if (Array.isArray(data)) {
+        const mapped = data.map((row) => ({
+          medicine: {
+            id: row.medicine_id,
+            name: row.medicine_name,
+            strength: row.strength || '',
+            generic_name: row.generic_name || '',
+            brand: row.brand || '',
+            manufacturer: 'Authorized Pharma',
+          },
+          pharmacy: {
+            id: row.pharmacy_id,
+            name: row.pharmacy_name,
+            address: row.pharmacy_address || '',
+            phone: row.pharmacy_phone || '+91 98765 43210',
+            latitude: parseFloat(row.pharmacy_lat),
+            longitude: parseFloat(row.pharmacy_lng),
+          },
+          distanceKm: parseFloat(row.distance_km || 0),
+          availablePieces: Number(row.available_pieces || 0),
+          piecesPerStrip: Number(row.pieces_per_strip || 10),
+          availableStrips: Number(row.available_strips || 0),
+          loosePieces: Number(row.loose_pieces || 0),
+          pricePerStrip: Number(row.price_per_strip || 0),
+          pricePerPiece: Number(row.price_per_piece || 0),
+          directionsUrl: row.directions_url,
+        }));
+        setSearchResults(mapped);
+      } else {
+        setSearchResults([]);
+      }
+    }).catch((err) => {
+      if (!active) return;
+      console.warn('Medicine search error:', err);
+      setIsSearching(false);
+      setSearchResults([]);
     });
 
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    matchedMeds.forEach(med => {
-      // Find inventory across all pharmacies
-      // For this pharmacy demo:
-      allPharmacies.forEach(ph => {
-        // Find non-expired batches with positive stock for this medicine in this pharmacy
-        const medBatches = batches.filter(
-          b => b.medicine_id === med.id && b.expiry_date >= todayStr
-        );
-
-        let totalPiecesInPharmacy = 0;
-        let pPerStrip = 0;
-        let pPerPiece = 0;
-        let piecesPerStrip = med.pieces_per_strip || 10;
-
-        medBatches.forEach(b => {
-          const inv = inventory.find(i => i.batch_id === b.id);
-          if (inv && inv.total_pieces > 0) {
-            totalPiecesInPharmacy += inv.total_pieces;
-            pPerStrip = inv.price_per_strip || pPerStrip;
-            pPerPiece = inv.price_per_piece || pPerPiece;
-            piecesPerStrip = inv.pieces_per_strip || piecesPerStrip;
-          }
-        });
-
-        // STRICT REQUIREMENT: Only show if available stock in pieces > 0
-        if (totalPiecesInPharmacy > 0) {
-          const distance = calculateDistanceKm(
-            userLocation.lat,
-            userLocation.lng,
-            ph.latitude,
-            ph.longitude
-          );
-
-          results.push({
-            medicine: med,
-            pharmacy: ph,
-            distanceKm: distance,
-            availablePieces: totalPiecesInPharmacy,
-            piecesPerStrip: piecesPerStrip,
-            availableStrips: Math.floor(totalPiecesInPharmacy / piecesPerStrip),
-            loosePieces: totalPiecesInPharmacy % piecesPerStrip,
-            pricePerStrip: pPerStrip,
-            pricePerPiece: pPerPiece,
-          });
-        }
-      });
-    });
-
-    // STRICT REQUIREMENT: Sort by distance from customer location, nearest first
-    results.sort((a, b) => a.distanceKm - b.distanceKm);
-
-    return results;
-  }, [searchQuery, medicines, inventory, batches, allPharmacies, userLocation]);
+    return () => {
+      active = false;
+    };
+  }, [searchQuery, userLocation, searchSessionId]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -210,8 +159,17 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                if (onSwitchToPharmacist) onSwitchToPharmacist();
-                else navigate('/pharmacist/dashboard');
+                if (onSwitchToPharmacist) {
+                  onSwitchToPharmacist();
+                } else if (!isAuthenticated || !user) {
+                  navigate('/pharmacist/login');
+                } else if (!isEmailVerified) {
+                  navigate('/pharmacist/login?unverified=true');
+                } else if (!isSetupComplete) {
+                  navigate('/pharmacist/setup');
+                } else {
+                  navigate('/pharmacist/dashboard');
+                }
               }}
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-3.5 py-2 rounded-lg transition-all shadow-sm flex items-center gap-1.5"
             >
@@ -269,7 +227,7 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
             </button>
           </div>
 
-          {/* Location Presets & Status */}
+          {/* Location Status */}
           <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-blue-200 pt-2">
             <span className="flex items-center gap-1 font-medium text-white">
               <MapPin className="w-3.5 h-3.5 text-rose-400" />
@@ -278,20 +236,6 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
             <span className="bg-blue-900/60 text-blue-100 border border-blue-400/20 px-2.5 py-1 rounded-md font-semibold">
               {userLocation.name}
             </span>
-            <span className="text-blue-300">or try demo:</span>
-            {DEMO_LOCATIONS.map((loc) => (
-              <button
-                key={loc.name}
-                onClick={() => setUserLocation(loc)}
-                className={`px-2 py-0.5 rounded transition-colors text-[11px] ${
-                  userLocation.name === loc.name 
-                    ? 'bg-white text-blue-900 font-bold' 
-                    : 'bg-blue-800/80 hover:bg-blue-800 text-blue-200'
-                }`}
-              >
-                {loc.name.split(' (')[0]}
-              </button>
-            ))}
           </div>
 
           {locationError && (
@@ -337,7 +281,9 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
             </div>
             <h3 className="text-base font-bold text-slate-800 mb-1">No In-Stock Pharmacies Found</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Zero-stock pharmacies are hidden. No pharmacy currently has "{searchQuery}" in pieces &gt; 0. Try searching another medicine name or adjusting your location.
+              {searchQuery 
+                ? `Zero-stock pharmacies are hidden. No pharmacy currently has "${searchQuery}" in pieces > 0. Try searching another medicine name or adjusting your location.`
+                : 'No pharmacies currently have in-stock medicines. Once a pharmacist registers and adds stock, available inventory will appear here.'}
             </p>
             <button
               onClick={() => setSearchQuery('')}

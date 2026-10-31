@@ -1,22 +1,24 @@
-# MedGuard AI — Intelligent Pharmacy Inventory & Discovery Platform
+# MedGuard AI — High-Precision Retail Pharmacy Operating System & Public Discovery Engine
 
-**MedGuard AI** is a production-grade pharmacy operating system and medicine availability discovery engine. It bridges real-time pharmacy stock with customer geolocation discovery, automates medicine intake using Gemma 4 multimodal OCR, enforces First-Expired First-Out (FEFO) dispensing, guarantees atomic race-free checkout, and archives downloadable PDF tax invoices with Resend email delivery.
+**MedGuard AI** is a production-grade full-stack pharmacy operating system and medicine availability discovery engine. It bridges real-time pharmacy stock with customer geolocation discovery, automates medicine intake using Gemma 4 multimodal OCR, enforces First-Expired First-Out (FEFO) dispensing, guarantees atomic race-free checkout, and archives downloadable PDF tax invoices with Resend email delivery.
 
 ---
 
 ## 🌟 Key Architecture & Highlights
 
-| Capability | Implementation |
+| Layer | Implementation |
 | :--- | :--- |
-| **Frontend** | React 18, Vite 6, Tailwind CSS, Lucide Icons |
-| **Database & Auth** | Supabase PostgreSQL with Row Level Security (RLS) & Supabase Auth |
-| **Atomic POS Checkout** | PostgreSQL `process_sale` RPC function with `FOR UPDATE` row-level locks |
-| **Public Customer Radar** | Geospatial Haversine calculation (`search_nearby_medicines` RPC), zero login required, strictly filters `pieces > 0`, nearest pharmacy first |
-| **AI Packaging Scan** | Supabase Edge Function calling Gemma 4 Vision with structured extraction & confidence scoring |
-| **Inventory Source of Truth** | Internal truth is **total pieces**; derived dynamic values: `strips = total_pieces / pcs_per_strip`, `loose = total_pieces % pcs_per_strip` |
+| **Frontend** | React 18, Vite, Tailwind CSS, Lucide Icons, Axios |
+| **Backend API** | Python FastAPI, Uvicorn, Pydantic v2 |
+| **Database & ORM** | SQLite (`backend/data/medguard.db`), SQLAlchemy 2.0 |
+| **Authentication** | JWT (JSON Web Tokens) with bcrypt password hashing |
+| **Atomic POS Checkout** | ACID transactional SQLite checkout with FEFO earliest expiry deduction |
+| **Public Customer Radar** | Geospatial Haversine calculation (`/api/public/medicines/search`), zero login required, strictly filters `pieces > 0`, nearest pharmacy first with Google Maps directions link |
+| **AI Packaging Scan** | Server-side Gemma 4 Vision-compatible OCR endpoint (`/api/ai/scan-medicine`) reading `GEMMA_API_KEY` (no key exposed to browser) |
+| **Inventory Source of Truth** | Internal truth is **total pieces**; derived dynamic values: `strips = total_pieces // pcs_per_strip`, `loose = total_pieces % pcs_per_strip` |
 | **Batch & FEFO Enforcement**| Automatic recommendation of the earliest expiring non-expired batch; zero dispensing permission for expired stock |
-| **PDF Invoices** | Server & client compatible high-fidelity PDF invoice generator with Supabase Storage bucket archival |
-| **Email Invoices** | Resend API integration via Supabase Edge Function with non-blocking error resilience |
+| **PDF Invoices** | ReportLab backend PDF generator (`/api/invoices/{id}/pdf`) and client jsPDF fallback |
+| **Email Invoices** | Non-blocking Resend email delivery service (`email_service.py`) with full delivery logs |
 | **Audit Ledger** | Immutable `stock_movements` table recording every inward, sale, adjustment, and write-off |
 
 ---
@@ -25,183 +27,155 @@
 
 ```text
 MedGuard/
-├── .env.example                     # Environment template
-├── supabase/
-│   ├── schema.sql                   # Complete PostgreSQL schema, tables, indexes, RLS, and RPCs
-│   ├── storage.sql                  # Supabase Storage bucket configuration & policies
-│   ├── seed.sql                     # Realistic demo seed data (Pharmacies, Medicines, Batches)
-│   ├── README.md                    # Edge function deployment & secret guide
-│   └── functions/
-│       ├── scan-medicine/index.ts   # Gemma 4 Vision Edge Function
-│       └── send-invoice/index.ts    # Resend email delivery Edge Function
+├── backend/
+│   ├── app/
+│   │   ├── main.py                     # FastAPI entry point, CORS, routes & static mounts
+│   │   ├── config.py                   # Pydantic Settings (.env configuration)
+│   │   ├── database.py                 # SQLite database engine, sessionmaker & Base
+│   │   ├── dependencies.py             # JWT auth, user/pharmacy resolution & password hashing
+│   │   ├── models/                     # SQLAlchemy Models
+│   │   │   ├── user.py                 # Pharmacist users
+│   │   │   ├── pharmacy.py             # Pharmacy profiles & location
+│   │   │   ├── medicine.py             # Medicine master catalog
+│   │   │   ├── supplier.py             # Wholesale suppliers
+│   │   │   ├── batch.py                # Batches with expiry dates & MRP
+│   │   │   ├── inventory.py            # Total pieces (authoritative source of truth)
+│   │   │   ├── customer.py             # Customer directory
+│   │   │   ├── sale.py                 # Sales master & line items
+│   │   │   ├── invoice.py              # Invoices & PDF paths
+│   │   │   ├── stock_movement.py       # Full immutable audit trail
+│   │   │   ├── ai_scan.py              # AI vision scan audit logs
+│   │   │   ├── search_session.py       # Public search analytics
+│   │   │   └── email_log.py            # Resend email delivery status
+│   │   ├── schemas/                    # Pydantic Schemas for validation & serialization
+│   │   ├── services/                   # Core business logic (FEFO, Sales, PDF, Email, Search, AI)
+│   │   └── routers/                    # REST API routes
+│   ├── data/
+│   │   └── medguard.db                 # SQLite database file
+│   ├── storage/
+│   │   └── invoices/                   # Stored PDF tax invoices
+│   ├── tests/                          # Pytest unit & integration test suite
+│   ├── seed.py                         # Demo database seeding script
+│   └── requirements.txt                # Python backend dependencies
 ├── src/
+│   ├── api/                            # Axios REST API client modules
+│   │   ├── axios.js                    # Base Axios instance with JWT interceptor
+│   │   ├── authApi.js                  # Authentication API
+│   │   ├── pharmaciesApi.js            # Pharmacy profile API
+│   │   ├── inventoryApi.js             # Stock management API
+│   │   ├── salesApi.js                 # POS checkout API
+│   │   ├── aiApi.js                    # AI vision OCR API
+│   │   ├── publicApi.js                # Public customer search API
+│   │   └── ...
 │   ├── context/
-│   │   └── PharmacyContext.jsx      # Global state, FEFO rules, POS checkout, & Supabase sync
-│   ├── lib/
-│   │   ├── supabase.js              # Supabase client initializer & config detector
-│   │   └── mockStore.js             # Realistic local demo store & offline fallback
-│   ├── utils/
-│   │   ├── geoUtils.js              # Haversine distance & Google Maps directions
-│   │   └── pdfGenerator.js          # Professional jsPDF invoice generator & Supabase Storage uploader
+│   │   └── PharmacyContext.jsx         # Global state & operational hooks
 │   ├── components/
-│   │   ├── customer/
-│   │   │   └── CustomerDiscovery.jsx # Public Medicine Discovery Radar (No Login)
-│   │   ├── auth/
-│   │   │   └── PharmacistAuth.jsx    # Pharmacist Auth & Pharmacy Registration (Lat/Lng)
-│   │   ├── layout/
-│   │   │   └── PharmacistLayout.jsx  # Pharmacist Dashboard Shell & Navigation
-│   │   ├── dashboard/
-│   │   │   └── Dashboard.jsx         # Real-time KPIs, near-expiry alerts, low-stock warnings
-│   │   ├── inventory/
-│   │   │   ├── InventoryList.jsx     # Strip & piece breakdown, stock adjustments
-│   │   │   ├── AddStock.jsx          # Manual & AI-assisted batch inward
-│   │   │   └── ExpiryManagement.jsx  # FEFO radar & configurable near-expiry window
-│   │   ├── ai/
-│   │   │   └── AiScanner.jsx         # Packaging upload/camera, Gemma 4 OCR, confidence meter
-│   │   ├── pos/
-│   │   │   └── PointOfSale.jsx       # Phone customer lookup, strip/piece cart, atomic checkout
-│   │   ├── invoices/
-│   │   │   └── InvoiceList.jsx       # Historical invoices, PDF download, Resend email action
-│   │   ├── customers/
-│   │   │   └── CustomerManagement.jsx # Normalized phone records & patient spend history
-│   │   ├── suppliers/
-│   │   │   └── SupplierManagement.jsx # Wholesale distributors & linked batch associations
-│   │   ├── reports/
-│   │   │   └── Reports.jsx           # Sales audit, inventory valuation, CSV export, medicine velocity
-│   │   └── movements/
-│   │       └── StockMovements.jsx    # Auditable stock movement ledger
-│   ├── App.jsx                      # App root with seamless view switcher
-│   └── main.jsx                     # Vite mount point
+│   │   ├── customer/                   # Public customer discovery radar
+│   │   ├── auth/                       # Pharmacist login, register & setup
+│   │   ├── dashboard/                  # Dashboard KPIs & alerts
+│   │   ├── inventory/                  # Inward stock, inventory list & expiry management
+│   │   ├── pos/                        # Point of Sale (POS) checkout
+│   │   ├── ai/                         # Multimodal medicine strip scanner
+│   │   └── ...
+│   ├── utils/
+│   │   ├── geoUtils.js                 # Haversine & Google Maps directions
+│   │   └── pdfGenerator.js             # Client-side jsPDF helper
+│   ├── App.jsx                         # Main route tree
+│   └── main.jsx                        # React 18 bootstrap
+├── .env                                # Frontend environment variables
+├── package.json                        # Frontend dependencies
+└── vite.config.js                      # Vite configuration
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quickstart Guide
 
 ### 1. Prerequisites
-- Node.js (v18 or higher recommended)
-- Supabase project (`https://jorghleuygkkxryvfmzr.supabase.co`)
+- **Node.js**: v18 or higher
+- **Python**: v3.10, v3.11, or v3.12
 
-### 2. Install Dependencies
+### 2. Backend Setup
+
 ```bash
+# 1. Create and activate virtual environment
+python3 -m venv backend/venv
+source backend/venv/bin/activate  # On Windows: backend\venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -r backend/requirements.txt
+
+# 3. Seed initial demo data (Pharmacies, Medicines, Batches)
+python backend/seed.py
+
+# 4. Start FastAPI server
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+The FastAPI backend will be live at `http://localhost:8000` with Swagger docs at `http://localhost:8000/docs`.
+
+### 3. Frontend Setup
+
+In a new terminal:
+```bash
+# 1. Install dependencies
 npm install
-```
 
-### 3. Configure Frontend Environment
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-Update `.env` with your Supabase credentials:
-```env
-VITE_SUPABASE_URL=https://jorghleuygkkxryvfmzr.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_anon_key_here
-```
-*(Note: If you leave the publishable key unconfigured, MedGuard AI automatically activates its high-fidelity local demo store, allowing full exploration of all modules, POS checkout, PDF generation, and customer discovery out of the box).*
-
-### 4. Run Development Server
-```bash
+# 2. Start Vite development server
 npm run dev
 ```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+The React frontend will be live at `http://localhost:5173`.
 
 ---
 
-## 🗄️ Supabase Database & Edge Functions Setup
+## 🧪 Testing
 
-### Step 1: Run PostgreSQL Schema
-1. Open your Supabase Dashboard: **[https://jorghleuygkkxryvfmzr.supabase.co](https://jorghleuygkkxryvfmzr.supabase.co)**
-2. Go to **SQL Editor** -> **New Query**.
-3. Paste and execute the contents of [`supabase/schema.sql`](file:///Users/eluribhuvanavenkatachandu/Downloads/MedGuard/supabase/schema.sql).
-   This creates:
-   - Tables: `profiles`, `pharmacies`, `medicines`, `suppliers`, `batches`, `inventory`, `customers`, `sales`, `sale_items`, `invoices`, `ai_scans`, `search_sessions`, `stock_movements`, `email_logs`.
-   - RPC function `process_sale`: Atomic ACID checkout function with row-locking (`FOR UPDATE`).
-   - RPC function `search_nearby_medicines`: Geolocation distance search returning pharmacies with `available_stock > 0`.
-   - Row Level Security (RLS) policies isolating pharmacy private data while allowing safe public medicine availability discovery.
-
-### Step 2: Configure Storage Buckets
-Run [`supabase/storage.sql`](file:///Users/eluribhuvanavenkatachandu/Downloads/MedGuard/supabase/storage.sql) in SQL Editor:
-- Bucket `medicine-scans`: Stores uploaded medicine packaging photos.
-- Bucket `invoices`: Stores generated official invoice PDFs.
-
-### Step 3: Populate Demo Seed Data (Optional)
-Run [`supabase/seed.sql`](file:///Users/eluribhuvanavenkatachandu/Downloads/MedGuard/supabase/seed.sql) to seed sample pharmacies (Apollo Care Indiranagar & MedPlus Koramangala), suppliers (Cipla, Sun Pharma), medicines (Dolo 650, Augmentin 625 Duo, Pan 40, Cetriz 10), and batches with various expiry dates to test FEFO.
-
-### Step 4: Configure Edge Function Secrets
-In Supabase Dashboard, navigate to **Project Settings** -> **Edge Functions** -> **Add Secret**:
-- `GEMMA_API_KEY`: Your OpenRouter or Gemma 4 compatible vision API key.
-- `RESEND_API_KEY`: Your Resend API key for emailing invoices.
-
-Or via Supabase CLI:
+### Backend Unit & Integration Tests (Pytest)
 ```bash
-supabase secrets set GEMMA_API_KEY="your_api_key_here"
-supabase secrets set RESEND_API_KEY="your_resend_api_key_here"
+backend/venv/bin/pytest backend/tests -v
+```
+All tests verify:
+- Health check
+- User registration, login, and JWT validation
+- Inventory inward calculation and manual adjustment
+- FEFO batch ordering and atomic POS checkout stock deduction
+- Invoice PDF creation
+- Public customer search with Haversine distance
+
+### End-to-End Integration Flow Test
+```bash
+backend/venv/bin/python backend/test_e2e_full_flow.py
+# or
+node test_e2e_flow.cjs
 ```
 
-### Step 5: Deploy Edge Functions
+### Frontend Production Build
 ```bash
-supabase functions deploy scan-medicine --no-verify-jwt
-supabase functions deploy send-invoice --no-verify-jwt
+npm run build
 ```
 
 ---
 
-## 🧪 Detailed Functional Modules
+## 🔐 Authentication & Flow Integrity
 
-### 1. Customer Discovery Module (No Login Required)
-- **Public access**: Patients do NOT log in.
-- **Search radar**: Search by medicine commercial name, brand, generic salt, or strength (e.g. *Dolo 650*, *Paracetamol*, *Augmentin*, *650mg*).
-- **Geolocation**: One-click GPS location detection or instant demo presets (Indiranagar, Koramangala, etc.).
-- **Strict stock filter**: Only pharmacies with `available_pieces > 0` are displayed. Zero-stock pharmacies are completely hidden.
-- **Distance sorting**: Sorted strictly nearest to farthest with live distance badges (e.g., `0.8 km away`).
-- **Stock & price breakdown**: Shows available full strips, loose pieces, price per strip, and price per piece.
-- **Google Maps directions**: One-click button opens real-time navigation directions to the pharmacy's verified GPS coordinates.
-- **Search Session ID**: Generates a temporary session token (e.g., `SS-489211`) with clear disclaimers that searches do not create transactions or reservations.
+1. **New User Flow**:
+   - `Register (/pharmacist/register)` $\rightarrow$ Automatically authenticated via JWT
+   - Route guard detects `isSetupComplete == false` $\rightarrow$ Redirects to `Pharmacy Details & Location (/pharmacist/setup)`
+   - Submits pharmacy details and confirms location $\rightarrow$ Atomically links pharmacy to user
+   - Automatically navigates to `Dashboard (/pharmacist/dashboard)`.
 
-### 2. Pharmacist Authentication & Pharmacy Setup
-- Uses Supabase Auth for pharmacist login and registration.
-- Stores pharmacy name, owner name, phone, address, latitude, and longitude for geolocation search.
-- Isolates multi-tenant pharmacy records using Supabase RLS.
+2. **Returning User Flow**:
+   - `Login (/pharmacist/login)` $\rightarrow$ Validates credentials
+   - Route guard verifies `pharmacy_id` exists $\rightarrow$ Directly routes to `Dashboard (/pharmacist/dashboard)`.
+   - Never sends returning users back to Pharmacy Details.
 
-### 3. AI Medicine Packaging Scanner (Gemma 4 Vision)
-- Accepts file upload or real-time camera capture.
-- Analyzes medicine strip foil, box, or bottle packaging using Gemma 4 multimodal OCR via Supabase Edge Function.
-- Extracts medicine commercial name, active salt, strength, manufacturer, batch number, manufacturing date, and expiry date.
-- Computes AI confidence score (0-100%).
-- Flags blurry images, missing batch, or expired packaging.
-- **Never auto-trusts low confidence**: Displays extracted fields to the pharmacist for verification before transferring directly into inventory.
-
-### 4. Inventory, Strip & Piece Mathematics
-- **Internal source of truth**: `total_pieces`.
-- Real-time calculations:
-  - $\text{available\_strips} = \lfloor \text{total\_pieces} / \text{pieces\_per\_strip} \rfloor$
-  - $\text{loose\_pieces} = \text{total\_pieces} \pmod{\text{pieces\_per\_strip}}$
-- Guaranteed non-negative inventory via PostgreSQL constraints and frontend validation.
-
-### 5. FEFO (First-Expired, First-Out) Engine
-- During POS counter sales, MedGuard automatically prioritizes and recommends the valid non-expired batch with the earliest expiry date.
-- Expired stock is automatically blocked from dispensing.
-- Configurable near-expiry threshold (default 30 days) with real-time alert banners on the dashboard.
-
-### 6. Atomic POS Billing Counter
-- **Phone search**: Entering customer phone number automatically normalizes digits and searches existing records to load customer name and Gmail.
-- **Dispensing unit**: Pharmacist can sell full strips, loose individual pieces, or a combination.
-- **Atomic checkout**: Executes atomic database transaction (`process_sale` RPC) with PostgreSQL `FOR UPDATE` row locking to prevent overselling or race conditions.
-- Updates inventory, creates sale items, logs immutable stock movements, and generates invoice.
-
-### 7. Professional PDF Invoices & Email Delivery
-- Generates vector PDF invoices featuring pharmacy details, customer details, itemized table with batch/expiry breakdown, taxes, discounts, and signature block.
-- Uploads PDF to Supabase Storage bucket `invoices`.
-- Sends invoice PDF to the customer's Gmail via the `send-invoice` Supabase Edge Function using Resend.
-- **Resilience**: If email fails, the sale is NOT rolled back. The UI displays `Sale successful • Invoice generated • Email failed` with a one-click **Resend Invoice** button.
-
-### 8. Auditable Stock Movement Ledger
-- Complete auditable ledger tracking movement types: `initial_stock`, `stock_added`, `sale`, `adjustment`, `return`, `expired_stock`.
-- Tracks delta quantity and balance after every operation.
+3. **Public Discovery Flow (Customer)**:
+   - Zero login or registration required at `http://localhost:5173/`.
+   - Search by medicine name, generic composition, or brand.
+   - Live distance in km calculated with nearest pharmacy first.
+   - Displays exact available strips and loose pieces.
+   - One-click Google Maps directions link.
 
 ---
 
-## 🔒 Security & Data Isolation
-- **Row Level Security (RLS)**: Pharmacists can only read and write data belonging to their own pharmacy.
-- **Public API Privacy**: The public customer search RPC exposes only non-sensitive availability info (pharmacy name, address, coordinates, stock availability, and retail pricing). Private customer lists, internal sales numbers, purchase costs, and supplier details are never exposed to anonymous callers.
-- **No Secret Leakage**: `GEMMA_API_KEY`, `RESEND_API_KEY`, and database service credentials reside exclusively in Supabase Edge Function environment secrets.
+## 📄 License
+MIT License. Built for healthcare accessibility and pharmacy efficiency.

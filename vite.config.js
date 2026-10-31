@@ -12,14 +12,14 @@ export default defineConfig(({ mode }) => {
       host: true,
       allowedHosts: true,
       proxy: {
-        '/api/resend': {
-          target: 'https://api.resend.com',
+        '/api': {
+          target: 'http://localhost:8000',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/resend/, ''),
-          headers: {
-            'Authorization': `Bearer ${env.RESEND_API_KEY || env.VITE_RESEND_API_KEY || ''}`
-          }
-        }
+        },
+        '/storage': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
       }
     },
     build: {

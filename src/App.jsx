@@ -47,7 +47,7 @@ const PharmacistPortal = ({ activeTab }) => {
       )}
 
       {activeTab === 'pos' && (
-        <PointOfSale />
+        <PointOfSale onSaleComplete={() => handleTabChange('dashboard')} />
       )}
 
       {activeTab === 'inventory' && (

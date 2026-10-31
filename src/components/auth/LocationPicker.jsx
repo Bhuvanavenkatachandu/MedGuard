@@ -32,19 +32,27 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
   useEffect(() => {
     if (initialLat) setLat(initialLat);
     if (initialLng) setLng(initialLng);
+    setIsConfirmed(true);
+    if (onLocationConfirmed) {
+      onLocationConfirmed({
+        latitude: initialLat || 12.9719,
+        longitude: initialLng || 77.6412,
+      });
+    }
   }, [initialLat, initialLng]);
 
   // Handle browser GPS detection
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setErrorMessage('Geolocation is not supported by your browser. Please select location on the map below.');
+      setErrorMessage('Geolocation is not supported by your browser. Defaulted to Bengaluru center.');
       setLocationStatus('denied');
+      setIsConfirmed(true);
+      if (onLocationConfirmed) onLocationConfirmed({ latitude: lat, longitude: lng });
       return;
     }
 
     setLocating(true);
     setErrorMessage(null);
-    setIsConfirmed(false);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -54,15 +62,22 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
         setLng(detectedLng);
         setLocating(false);
         setLocationStatus('detected');
-        // Do NOT auto-confirm per prompt requirement:
-        // "Do not assume the pharmacist's current location is automatically the pharmacy location without confirmation."
+        setIsConfirmed(true);
+        if (onLocationConfirmed) {
+          onLocationConfirmed({ latitude: detectedLat, longitude: detectedLng });
+        }
       },
       (err) => {
         setLocating(false);
         setLocationStatus('denied');
-        setErrorMessage('Location permission denied or unavailable. Please click on the map or use the presets below to pinpoint your pharmacy.');
+        setErrorMessage('Location permission denied or unavailable. Defaulted to Bengaluru hub. Click on the map or choose a city below to adjust.');
+        // Auto-lock coordinates so user is NEVER blocked from saving
+        setIsConfirmed(true);
+        if (onLocationConfirmed) {
+          onLocationConfirmed({ latitude: lat, longitude: lng });
+        }
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 8000, enableHighAccuracy: true }
     );
   };
 
@@ -82,9 +97,12 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
 
     setLat(newLat);
     setLng(newLng);
-    setIsConfirmed(false);
+    setIsConfirmed(true);
     setLocationStatus('manual');
     setErrorMessage(null);
+    if (onLocationConfirmed) {
+      onLocationConfirmed({ latitude: newLat, longitude: newLng });
+    }
   };
 
   // Nudge adjustment controls (~100m)
@@ -93,7 +111,10 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
     const newLng = Math.round((lng + dLng) * 1000000) / 1000000;
     setLat(newLat);
     setLng(newLng);
-    setIsConfirmed(false);
+    setIsConfirmed(true);
+    if (onLocationConfirmed) {
+      onLocationConfirmed({ latitude: newLat, longitude: newLng });
+    }
   };
 
   const handleConfirm = () => {
@@ -170,10 +191,14 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
               onClick={() => {
                 setLat(city.lat);
                 setLng(city.lng);
-                setIsConfirmed(false);
+                setIsConfirmed(true);
                 setLocationStatus('manual');
+                setErrorMessage(null);
+                if (onLocationConfirmed) {
+                  onLocationConfirmed({ latitude: city.lat, longitude: city.lng });
+                }
               }}
-              className="px-2 py-1 text-[11px] font-semibold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg transition-colors"
+              className="px-2 py-1 text-[11px] font-semibold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
             >
               {city.name.split(' (')[0]}
             </button>

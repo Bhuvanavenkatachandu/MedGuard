@@ -27,7 +27,7 @@ import {
 
 export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, children }) => {
   const navigate = useNavigate();
-  const { pharmacy, profile, metrics, resetStore, logoutPharmacist } = usePharmacy();
+  const { pharmacy, profile, metrics, logoutPharmacist } = usePharmacy();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -36,7 +36,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'ai-scanner', label: 'AI Medicine Scanner', icon: Camera, badge: 'Gemma 4' },
     { id: 'add-stock', label: 'Add Stock', icon: PlusCircle },
-    { id: 'expiry', label: 'FEFO & Expiry', icon: Clock, alertCount: metrics.expiringSoonCount + metrics.expiredCount },
+    { id: 'expiry', label: 'FEFO & Expiry', icon: Clock, alertCount: ((metrics?.expiringSoonCount || 0) + (metrics?.expiredCount || 0)) },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'suppliers', label: 'Suppliers', icon: Truck },
     { id: 'invoices', label: 'Invoices & Billing', icon: FileText },
@@ -207,7 +207,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
 
           <div className="flex items-center gap-3">
             {/* Near Expiry / Low stock rapid status indicators */}
-            {metrics.lowStockCount > 0 && (
+            {metrics?.lowStockCount > 0 && (
               <button
                 onClick={() => setActiveTab('inventory')}
                 className="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-xs px-2.5 py-1 rounded-lg font-medium hover:bg-amber-100 transition-colors"
@@ -217,7 +217,7 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
               </button>
             )}
 
-            {metrics.expiringSoonCount > 0 && (
+            {metrics?.expiringSoonCount > 0 && (
               <button
                 onClick={() => setActiveTab('expiry')}
                 className="flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 text-xs px-2.5 py-1 rounded-lg font-medium hover:bg-rose-100 transition-colors"

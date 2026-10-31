@@ -39,13 +39,3 @@ export const getGoogleMapsDirectionsUrl = (destLat, destLng, pharmacyName = '') 
   const query = `${destLat},${destLng}`;
   return `https://www.google.com/maps/dir/?api=1&destination=${query}&travelmode=driving`;
 };
-
-/**
- * Popular location presets for rapid demo testing
- */
-export const DEMO_LOCATIONS = [
-  { name: 'Indiranagar Metro (Current Spot)', lat: 12.9784, lng: 77.6408 },
-  { name: 'Koramangala Sony World Signal', lat: 12.9352, lng: 77.6245 },
-  { name: 'MG Road Metro Station', lat: 12.9756, lng: 77.6066 },
-  { name: 'HSR Layout BDA Complex', lat: 12.9116, lng: 77.6474 },
-];
