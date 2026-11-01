@@ -14,11 +14,22 @@ def register_user(db: Session, req: UserRegisterRequest) -> TokenResponse:
             detail="A user with this email address already exists. Please log in.",
         )
 
+    user_name = (
+        (req.fullName and req.fullName.strip())
+        or (req.name and req.name.strip())
+        or req.email.split("@")[0].replace(".", " ").title()
+    )
+    user_phone = (
+        (req.phone and req.phone.strip())
+        or (req.mobileNumber and req.mobileNumber.strip())
+        or None
+    )
+
     new_user = User(
         email=req.email.lower().strip(),
         password_hash=hash_password(req.password),
-        name=req.fullName.strip(),
-        phone=req.phone.strip() if req.phone else None,
+        name=user_name,
+        phone=user_phone,
         role="pharmacist",
         is_active=True,
         is_verified=True,

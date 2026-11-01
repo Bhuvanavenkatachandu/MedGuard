@@ -17,6 +17,7 @@ export const PharmacistRegister = () => {
   const { registerPharmacist, resendVerificationEmail } = usePharmacy();
 
   // Basic account info fields
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -37,6 +38,10 @@ export const PharmacistRegister = () => {
     setResendNotice(null);
 
     // Validations
+    if (!fullName.trim()) {
+      setErrorMessage('Please enter your full name.');
+      return;
+    }
     if (!email.trim() || !email.includes('@')) {
       setErrorMessage('Please enter a valid email address.');
       return;
@@ -59,8 +64,11 @@ export const PharmacistRegister = () => {
 
     try {
       await registerPharmacist({
+        fullName: fullName.trim(),
+        name: fullName.trim(),
         email: email.trim(),
         password,
+        phone: cleanPhone,
         mobileNumber: cleanPhone,
       });
 
@@ -75,7 +83,7 @@ export const PharmacistRegister = () => {
 
   const handleModalOk = () => {
     setShowVerifyModal(false);
-    navigate('/pharmacist/login');
+    navigate('/pharmacist/setup');
   };
 
   const handleResend = async () => {
@@ -122,6 +130,24 @@ export const PharmacistRegister = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            {/* Full Name */}
+            <div>
+              <label className="block font-medium text-slate-300 mb-1">
+                Full Name / Pharmacist Name *
+              </label>
+              <div className="relative">
+                <UserCheck className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Dr. Rajesh Sharma"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
             {/* Email */}
             <div>
               <label className="block font-medium text-slate-300 mb-1">
@@ -230,11 +256,11 @@ export const PharmacistRegister = () => {
             </div>
 
             <h2 className="text-lg font-extrabold text-white">
-              Account Created
+              Account Created Successfully
             </h2>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Your account has been created. Please check your email{registeredEmail ? ` (${registeredEmail})` : ''} and click the verification link to verify your account before continuing.
+              Your pharmacist account has been created{registeredEmail ? ` for ${registeredEmail}` : ''}. You can now proceed to set up your pharmacy store details.
             </p>
 
             {resendNotice && (
@@ -258,16 +284,19 @@ export const PharmacistRegister = () => {
                 onClick={handleModalOk}
                 className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
               >
-                <span>OK</span>
+                <span>Continue to Pharmacy Setup</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
 
               <button
                 type="button"
-                disabled={resending}
-                onClick={handleResend}
-                className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 text-xs font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                onClick={() => {
+                  setShowVerifyModal(false);
+                  navigate('/pharmacist/login');
+                }}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2"
               >
-                <span>{resending ? 'Sending...' : 'Resend Verification Email'}</span>
+                <span>Sign In Instead</span>
               </button>
             </div>
           </div>

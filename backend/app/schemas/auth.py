@@ -2,10 +2,14 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 class UserRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     email: str
     password: str
-    fullName: str
+    fullName: Optional[str] = None
+    name: Optional[str] = None
     phone: Optional[str] = None
+    mobileNumber: Optional[str] = None
 
 class UserLoginRequest(BaseModel):
     email: str
