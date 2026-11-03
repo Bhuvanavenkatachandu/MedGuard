@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 class AIScanRequest(BaseModel):
@@ -20,7 +20,7 @@ class OCRRegion(BaseModel):
 class ProcessingMetadata(BaseModel):
     ocr_used: bool = True
     ocr_confidence: float = 0.0
-    validation: str = "uncertain"  # "trusted" | "uncertain"
+    validation: str = "uncertain"  # "trusted" | "ai_validated" | "uncertain"
     ai_fallback_used: bool = False
     ai_fields_requested: List[str] = Field(default_factory=list)
     targeted_crop_used: bool = False
@@ -41,21 +41,25 @@ class ExtractedMedicineData(BaseModel):
     price_per_strip: Optional[float] = None
 
 class AIScanResponse(BaseModel):
-    # Standard Hybrid Unified Fields
+    status: str = "SUCCESS"
+    success: bool = True
+    source: Any = "tesseract"
+    medicine: Dict[str, Any] = Field(default_factory=dict)
+
+    # Legacy direct medicine fields for backward compatibility
     medicine_name: Optional[str] = None
     strength: Optional[str] = None
     batch_number: Optional[str] = None
     manufacturing_date: Optional[str] = None
     expiry_date: Optional[str] = None
     quantity: Optional[int] = None
-    source: str = "tesseract"  # "tesseract" | "gemma" | "hybrid"
-    confidence: float = 0.0
-    validation_status: str = "trusted"  # "trusted" | "ai_validated" | "uncertain"
+
+    confidence: Union[Dict[str, Any], float] = 0.0
+    decision_log: List[str] = Field(default_factory=list)
+
+    validation_status: str = "trusted"
     processing: ProcessingMetadata
     bounding_boxes: List[OCRRegion] = Field(default_factory=list)
-
-    # Additional metadata & backward compatibility for frontend integration
-    success: bool = True
     extracted_data: Dict[str, Any] = Field(default_factory=dict)
     needs_manual_verification: bool = False
     issues: List[str] = Field(default_factory=list)

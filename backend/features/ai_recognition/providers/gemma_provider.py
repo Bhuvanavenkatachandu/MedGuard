@@ -18,11 +18,12 @@ class GemmaVisionProvider:
     def models_to_try() -> List[str]:
         configured = [settings.PRIMARY_VISION_MODEL, settings.FALLBACK_VISION_MODEL, settings.GEMMA_MODEL]
         defaults = [
+            "gemini-flash-lite-latest",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
             "gemma-4-26b-a4b-it",
             "gemini-3.8-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
         ]
         return list(dict.fromkeys(model for model in configured + defaults if model))
 

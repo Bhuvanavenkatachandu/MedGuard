@@ -164,6 +164,8 @@ class OCRService:
         return {
             "success": True,
             "bounding_boxes": boxes,
+            "tokens": tokens,
+            "lines": lines,
             "raw_text": raw_text,
             "overall_confidence": confidence,
             "extracted_fields": fields,
