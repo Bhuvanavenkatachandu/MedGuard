@@ -20,7 +20,26 @@ class RAGService:
 
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
-    SIMILARITY_THRESHOLD: float = 0.20
+    SIMILARITY_THRESHOLD: float = 0.15
+
+    STOPWORDS = {
+        "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "of", "with",
+        "by", "from", "is", "are", "was", "were", "be", "been", "can", "could", "should",
+        "would", "i", "we", "you", "they", "it", "my", "your", "after", "before", "about"
+    }
+
+    @staticmethod
+    def _stem(word: str) -> str:
+        w = word.lower().strip()
+        if len(w) > 4 and w.endswith("ies"):
+            return w[:-3] + "y"
+        if len(w) > 4 and w.endswith("ing"):
+            return w[:-3]
+        if len(w) > 3 and w.endswith("ed"):
+            return w[:-2]
+        if len(w) > 3 and w.endswith("s"):
+            return w[:-1]
+        return w
 
     @classmethod
     def chunk_text(cls, text: str) -> List[str]:
@@ -99,7 +118,10 @@ class RAGService:
 
         # 3. Score chunks using cosine similarity + keyword overlap boost
         scored: List[Tuple[float, KnowledgeChunk]] = []
-        query_words = set(re.findall(r"\w+", clean_query.lower()))
+        all_candidates: List[Tuple[float, KnowledgeChunk]] = []
+        
+        query_raw = re.findall(r"\w+", clean_query.lower())
+        query_words = set(cls._stem(w) for w in query_raw if w not in cls.STOPWORDS and len(w) > 1)
 
         for chunk in chunks:
             sim = 0.0
@@ -107,14 +129,22 @@ class RAGService:
                 sim = EmbeddingService.cosine_similarity(query_vec, chunk.embedding)
 
             # Keyword presence boost
-            chunk_words = set(re.findall(r"\w+", chunk.content.lower()))
+            chunk_raw = re.findall(r"\w+", chunk.content.lower())
+            chunk_words = set(cls._stem(w) for w in chunk_raw)
             overlap = len(query_words.intersection(chunk_words))
-            overlap_score = min(overlap * 0.1, 0.4)
+            overlap_score = min(overlap * 0.15, 0.6)
 
-            total_score = (sim * 0.7) + (overlap_score * 0.3)
+            total_score = (sim * 0.5) + (overlap_score * 0.5)
+            all_candidates.append((total_score, chunk))
 
-            if total_score >= cls.SIMILARITY_THRESHOLD or overlap >= 2:
+            if total_score >= cls.SIMILARITY_THRESHOLD or overlap >= 1:
                 scored.append((total_score, chunk))
+
+        # If strict threshold didn't capture chunks but chunks exist, take best candidate
+        if not scored and all_candidates:
+            all_candidates.sort(key=lambda x: x[0], reverse=True)
+            if all_candidates[0][0] > -0.2:
+                scored = all_candidates[:top_k]
 
         # Sort descending by score
         scored.sort(key=lambda x: x[0], reverse=True)

@@ -130,50 +130,101 @@ class LLMService:
         }
 
     @staticmethod
-    def _generate_offline_fallback(system_prompt: str, user_message: str) -> str:
+    def _is_empty_context(text: str) -> bool:
+        if not text:
+            return True
+        clean = text.strip().lower()
+        empty_markers = {
+            "no live inventory queried.",
+            "no live inventory queried",
+            "no live inventory data queried.",
+            "no live inventory data queried",
+            "no pharmacy documents found.",
+            "no pharmacy documents found",
+            "no pharmacy-specific documents found.",
+            "no pharmacy-specific documents found",
+            "none",
+            "0 matching records found.",
+        }
+        return clean in empty_markers or "0 matching records found" in clean
+
+    @classmethod
+    def _generate_offline_fallback(cls, system_prompt: str, user_message: str) -> str:
         """
         Generate an intelligent fallback response using context directly from the prompt
-        when cloud API is unavailable or unconfigured.
+        when cloud API is unavailable, rate-limited, or unconfigured.
         """
         lower_msg = user_message.lower()
 
-        # Check for inventory context in system prompt
-        has_inventory = "LIVE INVENTORY CONTEXT:" in system_prompt
-        has_knowledge = "KNOWLEDGE BASE CONTEXT:" in system_prompt
-
-        # Extract contexts
+        # Extract contexts from system prompt
         inv_text = ""
-        if has_inventory:
+        if "LIVE INVENTORY CONTEXT:" in system_prompt:
             inv_part = system_prompt.split("LIVE INVENTORY CONTEXT:")[-1]
             inv_text = inv_part.split("=")[0].strip()
 
         kb_text = ""
-        if has_knowledge:
+        if "KNOWLEDGE BASE CONTEXT:" in system_prompt:
             kb_part = system_prompt.split("KNOWLEDGE BASE CONTEXT:")[-1]
             kb_text = kb_part.split("LIVE INVENTORY CONTEXT:")[0].replace("=", "").strip()
 
-        # If user asks about medicines/stock
-        if any(w in lower_msg for w in ["stock", "have", "available", "price", "inventory", "medicine"]):
-            if inv_text and inv_text != "No live inventory data queried." and inv_text != "None":
-                return f"Based on our current records:\n\n{inv_text}\n\n*(Note: Please consult a doctor or pharmacist before taking medications.)*"
+        has_valid_inv = not cls._is_empty_context(inv_text)
+        has_valid_kb = not cls._is_empty_context(kb_text)
+
+        # 1. Policy & Operational Guidelines (Priority 1)
+        policy_keywords = [
+            "return", "refund", "exchange", "cancel", "policy", "policies",
+            "opened", "unopened", "strip", "receipt", "bill", "invoice",
+            "delivery", "shipping", "deliver", "hours", "timing", "open", "close",
+            "rule", "rules", "guideline", "guidelines", "sop"
+        ]
+        is_policy_query = any(k in lower_msg for k in policy_keywords)
+
+        if is_policy_query:
+            if has_valid_kb:
+                # If specific to returns / refunds / exchanges
+                if any(w in lower_msg for w in ["return", "refund", "exchange", "opened", "strip", "day", "bill", "invoice"]):
+                    lines = [line.strip() for line in kb_text.split("\n") if line.strip()]
+                    relevant_lines = [
+                        l for l in lines
+                        if any(w in l.lower() for w in ["return", "refund", "opened", "unopened", "bill", "invoice", "receipt", "unused", "condition", "accept", "policy"])
+                        and not l.startswith("[") and not l.lower().startswith("medical shop rules")
+                    ]
+                    if relevant_lines:
+                        points = "\n".join(f"• {l.lstrip('-• 123456789. ')}" for l in relevant_lines[:5])
+                        return (
+                            f"According to our pharmacy's return policy:\n\n"
+                            f"{points}\n\n"
+                            f"*(Note: Returns require an original purchase bill/invoice. Opened strips or unsealed medicines cannot be accepted for health and safety compliance.)*"
+                        )
+                return f"According to our store guidelines:\n\n{kb_text}"
+            else:
+                return (
+                    "I do not have specific return or store policy guidelines recorded for this pharmacy yet. "
+                    "Please consult our pharmacy counter staff directly for store policies."
+                )
+
+        # 2. Inventory & Stock Inquiries (Priority 2)
+        stock_keywords = [
+            "stock", "have", "available", "availability", "price", "cost", "mrp", "quantity", "inventory", "buy", "purchase"
+        ]
+        is_stock_query = any(k in lower_msg for k in stock_keywords)
+        if is_stock_query:
+            if has_valid_inv:
+                return (
+                    f"Based on our current records:\n\n"
+                    f"{inv_text}\n\n"
+                    f"*(Note: Please consult a doctor or pharmacist before taking medications.)*"
+                )
             return (
                 "I checked our current stock, but that item is not listed in our available inventory right now.\n\n"
                 "*(Note: Please consult a licensed doctor or pharmacist for alternative recommendations.)*"
             )
 
-        # If user asks about return/refund/delivery policies
-        if any(w in lower_msg for w in ["return", "refund", "exchange", "policy", "delivery", "shipping", "hours", "timing", "open"]):
-            if kb_text and kb_text != "No pharmacy-specific documents found." and kb_text != "None":
-                return f"Here is the policy information from our store guidelines:\n\n{kb_text}"
-            return (
-                "I do not have specific information regarding that policy for this pharmacy. "
-                "Please consult our pharmacy staff directly for clarification."
-            )
-
-        # General helpful fallback
-        if kb_text and kb_text != "No pharmacy-specific documents found." and kb_text != "None":
+        # 3. General Knowledge Fallback
+        if has_valid_kb:
             return f"Here is the relevant information from our pharmacy records:\n\n{kb_text}"
 
+        # 4. Standard Greeting / Prompt
         return (
             "Hello! I am your MedGuard Pharmacy Assistant. I can help you with store policies, "
             "opening hours, delivery options, and checking medicine stock. How may I assist you today?"
