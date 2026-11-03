@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+from backend.app.config import settings
 
 CONFIDENCE_THRESHOLD = 80.0
 CRITICAL_FIELDS = ["medicine_name", "batch_number", "expiry_date"]
@@ -66,6 +67,11 @@ class ValidationService:
             reasons.append("Image is blurry or low contrast, reducing OCR reliability")
 
         # 1. Medicine Name Validation
+        med_threshold = getattr(settings, "OCR_MEDICINE_NAME_THRESHOLD", 80.0)
+        str_threshold = getattr(settings, "OCR_STRENGTH_THRESHOLD", 80.0)
+        batch_threshold = getattr(settings, "OCR_BATCH_THRESHOLD", 80.0)
+        date_threshold = getattr(settings, "OCR_DATE_THRESHOLD", 80.0)
+
         med_name = extracted_fields.get("medicine_name")
         med_conf = field_confidences.get("medicine_name", 0.0)
         if not med_name:
@@ -74,8 +80,8 @@ class ValidationService:
         elif not cls._is_readable_medicine_name(med_name):
             reasons.append(f"Medicine name '{med_name}' appears garbled or unreadable")
             uncertain_fields["medicine_name"] = med_name
-        elif med_conf < CONFIDENCE_THRESHOLD:
-            reasons.append(f"Medicine name confidence ({med_conf:.1f}%) is below threshold ({CONFIDENCE_THRESHOLD}%)")
+        elif med_conf < med_threshold:
+            reasons.append(f"Medicine name confidence ({med_conf:.1f}%) is below threshold ({med_threshold}%)")
             uncertain_fields["medicine_name"] = med_name
         else:
             trusted_fields["medicine_name"] = med_name
@@ -85,10 +91,10 @@ class ValidationService:
         str_conf = field_confidences.get("strength", 0.0)
         if strength:
             if cls._is_valid_strength(strength):
-                if str_conf >= CONFIDENCE_THRESHOLD:
+                if str_conf >= str_threshold:
                     trusted_fields["strength"] = strength
                 else:
-                    reasons.append(f"Strength confidence ({str_conf:.1f}%) is below threshold ({CONFIDENCE_THRESHOLD}%)")
+                    reasons.append(f"Strength confidence ({str_conf:.1f}%) is below threshold ({str_threshold}%)")
                     uncertain_fields["strength"] = strength
             else:
                 reasons.append(f"Strength format '{strength}' is irregular or unverified")
@@ -114,8 +120,8 @@ class ValidationService:
         elif not cls._is_valid_batch_number(batch):
             reasons.append(f"Batch number '{batch}' has invalid structure or noise")
             uncertain_fields["batch_number"] = batch
-        elif batch_conf < CONFIDENCE_THRESHOLD:
-            reasons.append(f"Batch number confidence ({batch_conf:.1f}%) is below threshold ({CONFIDENCE_THRESHOLD}%)")
+        elif batch_conf < batch_threshold:
+            reasons.append(f"Batch number confidence ({batch_conf:.1f}%) is below threshold ({batch_threshold}%)")
             uncertain_fields["batch_number"] = batch
         else:
             trusted_fields["batch_number"] = batch
@@ -131,8 +137,8 @@ class ValidationService:
         elif not parsed_exp_dt:
             reasons.append(f"Expiry date '{exp_date_raw}' is unparseable or has invalid date format")
             uncertain_fields["expiry_date"] = exp_date_raw
-        elif exp_conf < CONFIDENCE_THRESHOLD:
-            reasons.append(f"Expiry date confidence ({exp_conf:.1f}%) is below threshold ({CONFIDENCE_THRESHOLD}%)")
+        elif exp_conf < date_threshold:
+            reasons.append(f"Expiry date confidence ({exp_conf:.1f}%) is below threshold ({date_threshold}%)")
             uncertain_fields["expiry_date"] = norm_exp_str
             normalized["expiry_date"] = norm_exp_str
         else:
@@ -147,7 +153,7 @@ class ValidationService:
         if mfg_date_raw:
             if parsed_mfg_dt:
                 normalized["manufacturing_date"] = norm_mfg_str
-                if mfg_conf >= CONFIDENCE_THRESHOLD:
+                if mfg_conf >= date_threshold:
                     trusted_fields["manufacturing_date"] = norm_mfg_str
                 else:
                     uncertain_fields["manufacturing_date"] = norm_mfg_str
@@ -165,18 +171,21 @@ class ValidationService:
             uncertain_fields["manufacturing_date"] = None
 
         # 6. Quantity Validation
-        qty = extracted_fields.get("quantity", 10)
-        try:
-            qty_int = int(qty)
-            if 1 <= qty_int <= 500:
-                normalized["quantity"] = qty_int
-                trusted_fields["quantity"] = qty_int
-            else:
-                normalized["quantity"] = 10
+        qty = extracted_fields.get("quantity")
+        if qty is not None:
+            try:
+                qty_int = int(qty)
+                if 1 <= qty_int <= 500:
+                    normalized["quantity"] = qty_int
+                    trusted_fields["quantity"] = qty_int
+                else:
+                    uncertain_fields["quantity"] = qty
+                    normalized["quantity"] = None
+            except (ValueError, TypeError):
                 uncertain_fields["quantity"] = qty
-        except (ValueError, TypeError):
-            normalized["quantity"] = 10
-            uncertain_fields["quantity"] = qty
+                normalized["quantity"] = None
+        else:
+            normalized["quantity"] = None
 
         # 7. Final Decision Gate: Trusted vs Uncertain
         # Must have all critical fields trusted and zero blocking diagnostic reasons
@@ -322,3 +331,145 @@ class ValidationService:
                 return dt, norm_str
 
         return None, raw
+
+    @classmethod
+    def validate_gemma_output(
+        cls,
+        raw_ai_data: Dict[str, Any],
+        uncertain_fields: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """
+        Second Validation Gate:
+        Rigorously validates Gemma Vision output to prevent hallucinated data from entering the database.
+        Checks:
+        - Valid medicine name (not generic placeholders like "null", "unknown", "N/A", garbled string)
+        - Valid strength pattern (regex units mg/g/mcg/ml/%)
+        - Valid batch number format
+        - Valid expiry date (proper month 1-12, realistic year 2020-2060, rejecting invalid dates like 15/2028)
+        - Valid manufacturing date
+        - Chronological order: mfg <= exp
+        - Numerical sanity: pieces_per_strip/quantity (1-500), price_per_strip (positive float)
+        """
+        sanitized: Dict[str, Any] = {}
+        issues: List[str] = []
+
+        # Helper to check if string is null/placeholder
+        def is_placeholder(val: Any) -> bool:
+            if val is None:
+                return True
+            s = str(val).strip().lower()
+            return s in ["", "null", "none", "unknown", "n/a", "not visible", "unreadable", "nil"]
+
+        # 1. Medicine Name
+        ai_med = raw_ai_data.get("medicine_name")
+        if not is_placeholder(ai_med):
+            med_clean = str(ai_med).strip()
+            if cls._is_readable_medicine_name(med_clean):
+                sanitized["medicine_name"] = med_clean
+            else:
+                issues.append(f"AI returned unreadable medicine name '{med_clean}'; discarded as hallucination.")
+                sanitized["medicine_name"] = None
+        else:
+            sanitized["medicine_name"] = None
+
+        # 2. Strength
+        ai_str = raw_ai_data.get("strength")
+        if not is_placeholder(ai_str):
+            str_clean = str(ai_str).strip()
+            if cls._is_valid_strength(str_clean):
+                sanitized["strength"] = str_clean
+            else:
+                m_sub = re.search(r"\b(\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|l|%|iu)(?:\s*(?:w\/v|w\/w))?)\b", str_clean, re.I)
+                if m_sub:
+                    sanitized["strength"] = m_sub.group(1).strip()
+                else:
+                    issues.append(f"AI returned invalid strength '{str_clean}'; discarded.")
+                    sanitized["strength"] = None
+        else:
+            sanitized["strength"] = None
+
+        # 3. Batch Number
+        ai_batch = raw_ai_data.get("batch_number")
+        if not is_placeholder(ai_batch):
+            batch_clean = str(ai_batch).strip()
+            if cls._is_valid_batch_number(batch_clean):
+                sanitized["batch_number"] = batch_clean
+            else:
+                issues.append(f"AI returned invalid batch number '{batch_clean}'; discarded.")
+                sanitized["batch_number"] = None
+        else:
+            sanitized["batch_number"] = None
+
+        # 4. Expiry Date
+        ai_exp = raw_ai_data.get("expiry_date")
+        exp_dt = None
+        if not is_placeholder(ai_exp):
+            exp_clean = str(ai_exp).strip()
+            exp_dt, norm_exp = cls._parse_and_normalize_date(exp_clean)
+            if exp_dt and norm_exp:
+                sanitized["expiry_date"] = norm_exp
+            else:
+                issues.append(f"AI returned invalid or unparseable expiry date '{exp_clean}'; discarded.")
+                sanitized["expiry_date"] = None
+        else:
+            sanitized["expiry_date"] = None
+
+        # 5. Manufacturing Date
+        ai_mfg = raw_ai_data.get("manufacturing_date")
+        mfg_dt = None
+        if not is_placeholder(ai_mfg):
+            mfg_clean = str(ai_mfg).strip()
+            mfg_dt, norm_mfg = cls._parse_and_normalize_date(mfg_clean)
+            if mfg_dt and norm_mfg:
+                sanitized["manufacturing_date"] = norm_mfg
+            else:
+                issues.append(f"AI returned invalid manufacturing date '{mfg_clean}'; discarded.")
+                sanitized["manufacturing_date"] = None
+        else:
+            sanitized["manufacturing_date"] = None
+
+        # 6. Chronology: mfg <= exp
+        if exp_dt and mfg_dt:
+            if mfg_dt > exp_dt:
+                issues.append(f"AI manufacturing date ({sanitized['manufacturing_date']}) is after expiry date ({sanitized['expiry_date']}); discarded invalid dates.")
+                sanitized["manufacturing_date"] = None
+                sanitized["expiry_date"] = None
+
+        # 7. Quantity / Pieces per strip
+        ai_qty = raw_ai_data.get("pieces_per_strip") or raw_ai_data.get("quantity")
+        if not is_placeholder(ai_qty):
+            try:
+                qty_val = int(ai_qty)
+                if 1 <= qty_val <= 500:
+                    sanitized["pieces_per_strip"] = qty_val
+                    sanitized["quantity"] = qty_val
+                else:
+                    sanitized["pieces_per_strip"] = None
+                    sanitized["quantity"] = None
+            except (ValueError, TypeError):
+                sanitized["pieces_per_strip"] = None
+                sanitized["quantity"] = None
+        else:
+            sanitized["pieces_per_strip"] = None
+            sanitized["quantity"] = None
+
+        # 8. Price per strip
+        ai_price = raw_ai_data.get("price_per_strip")
+        if not is_placeholder(ai_price):
+            try:
+                p_val = float(ai_price)
+                if 0.1 <= p_val <= 100000.0:
+                    sanitized["price_per_strip"] = round(p_val, 2)
+                else:
+                    sanitized["price_per_strip"] = None
+            except (ValueError, TypeError):
+                sanitized["price_per_strip"] = None
+        else:
+            sanitized["price_per_strip"] = None
+
+        # Pass through contextual descriptive strings safely
+        for k in ["generic_name", "brand", "manufacturer", "unit_of_measure"]:
+            val = raw_ai_data.get(k)
+            sanitized[k] = "" if is_placeholder(val) else str(val).strip()
+
+        return sanitized, issues

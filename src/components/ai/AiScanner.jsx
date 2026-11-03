@@ -42,8 +42,8 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     batch_number: '',
     manufacturing_date: '',
     expiry_date: '',
-    pieces_per_strip: 10,
-    price_per_strip: 50,
+    pieces_per_strip: '',
+    price_per_strip: '',
   });
 
   // Cycle animated scanning steps matching the hybrid pipeline
@@ -121,8 +121,8 @@ export const AiScanner = ({ onProceedToAddStock }) => {
           batch_number: '',
           manufacturing_date: '',
           expiry_date: '',
-          pieces_per_strip: 10,
-          price_per_strip: 50,
+          pieces_per_strip: '',
+          price_per_strip: '',
         },
         issues: [err.response?.data?.detail || err.message || 'Image clarity requires manual pharmacist entry.'],
       });
@@ -143,8 +143,8 @@ export const AiScanner = ({ onProceedToAddStock }) => {
       batch_number: ext.batch_number || data.batch_number || '',
       manufacturing_date: ext.manufacturing_date || data.manufacturing_date || '',
       expiry_date: ext.expiry_date || data.expiry_date || '',
-      pieces_per_strip: ext.pieces_per_strip || data.quantity || 10,
-      price_per_strip: ext.price_per_strip || 50,
+      pieces_per_strip: ext.pieces_per_strip ?? data.quantity ?? '',
+      price_per_strip: ext.price_per_strip ?? '',
     });
   };
 
@@ -450,7 +450,8 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                   type="number"
                   min="1"
                   value={verifiedData.pieces_per_strip}
-                  onChange={(e) => setVerifiedData({ ...verifiedData, pieces_per_strip: parseInt(e.target.value, 10) || 10 })}
+                  onChange={(e) => setVerifiedData({ ...verifiedData, pieces_per_strip: e.target.value === '' ? '' : parseInt(e.target.value, 10) })}
+                  placeholder="e.g. 10"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary font-mono font-semibold"
                 />
               </div>
@@ -462,7 +463,8 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                   step="0.01"
                   min="0"
                   value={verifiedData.price_per_strip}
-                  onChange={(e) => setVerifiedData({ ...verifiedData, price_per_strip: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setVerifiedData({ ...verifiedData, price_per_strip: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+                  placeholder="e.g. 45.00"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary font-mono font-semibold"
                 />
               </div>

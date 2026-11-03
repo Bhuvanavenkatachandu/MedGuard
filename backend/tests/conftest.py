@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.database import Base, get_db, engine, SessionLocal
+import backend.app.models  # register all models with Base.metadata
 from backend.app.main import app
 
 @pytest.fixture(scope="session", autouse=True)

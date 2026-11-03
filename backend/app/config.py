@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     GEMMA_API_KEY: str = ""
     GEMMA_API_URL: str = ""
     GEMMA_MODEL: str = "gemma-4-26b-a4b-it"
+    PRIMARY_VISION_MODEL: str = "gemma-4-26b-a4b-it"
+    FALLBACK_VISION_MODEL: str = "gemini-3.8-flash"
+
+    # Hybrid OCR Configurable Confidence Thresholds
+    OCR_MEDICINE_NAME_THRESHOLD: float = 80.0
+    OCR_STRENGTH_THRESHOLD: float = 80.0
+    OCR_BATCH_THRESHOLD: float = 80.0
+    OCR_DATE_THRESHOLD: float = 80.0
 
     # Generic SMTP Email Settings (Optional)
     SMTP_HOST: str = ""

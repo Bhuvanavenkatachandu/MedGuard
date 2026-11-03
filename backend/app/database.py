@@ -1,6 +1,7 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import StaticPool
 from backend.app.config import settings
 
 # Ensure storage directories exist
@@ -26,6 +27,7 @@ if is_postgres:
 else:
     # Fallback only for isolated in-memory test suites if needed
     engine_kwargs["connect_args"] = {"check_same_thread": False}
+    engine_kwargs["poolclass"] = StaticPool
 
 engine = create_engine(db_url, **engine_kwargs)
 

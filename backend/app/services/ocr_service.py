@@ -227,7 +227,7 @@ class OCRService:
             "batch_number": None,
             "manufacturing_date": None,
             "expiry_date": None,
-            "quantity": 10,
+            "quantity": None,
         }
         confidences: Dict[str, float] = {
             "medicine_name": 0.0,

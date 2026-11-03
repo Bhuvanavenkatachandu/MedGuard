@@ -329,3 +329,101 @@ async def test_hybrid_pipeline_uncertain_fallback_end_to_end():
         assert response.processing.ai_fallback_used is True
         assert any("Expiry date confidence" in r for r in response.processing.reason)
 
+def test_crop_uncertain_regions_finds_expiry_box():
+    from backend.app.services.ai_service import crop_uncertain_regions
+
+    img = Image.new("RGB", (800, 600), color=(255, 255, 255))
+    boxes = [
+        {"text": "PARACETAMOL", "confidence": 95.0, "box": {"x": 50, "y": 50, "width": 200, "height": 30}},
+        {"text": "Exp", "confidence": 45.0, "box": {"x": 50, "y": 400, "width": 40, "height": 25}},
+        {"text": "Date:", "confidence": 42.0, "box": {"x": 95, "y": 400, "width": 50, "height": 25}},
+        {"text": "08/2027", "confidence": 35.0, "box": {"x": 150, "y": 400, "width": 70, "height": 25}},
+    ]
+    uncertain_fields = {"expiry_date": "08/2027"}
+
+    cropped, crop_used, crop_box = crop_uncertain_regions(img, boxes, uncertain_fields)
+    assert crop_used is True
+    assert cropped.width < 800
+    assert cropped.height < 600
+    # Cropped region should cover the expiry area around y=400
+    assert crop_box[1] <= 400
+
+def test_second_validation_gate_rejects_hallucinations_and_invalid_dates():
+    """Gemma second validation must reject 15/2028, placeholder names, and reversed mfg > exp"""
+    # Case 1: Invalid month 15/2028
+    raw_ai_data = {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "batch_number": "MET101",
+        "expiry_date": "15/2028",  # Invalid month!
+    }
+    sanitized, issues = ValidationService.validate_gemma_output(raw_ai_data, {"expiry_date": None})
+    assert sanitized["expiry_date"] is None
+    assert any("invalid or unparseable expiry date" in i.lower() for i in issues)
+
+    # Case 2: Hallucinated placeholder medicine name
+    raw_ai_data_2 = {
+        "medicine_name": "Unknown",
+        "batch_number": "MET101",
+    }
+    sanitized_2, issues_2 = ValidationService.validate_gemma_output(raw_ai_data_2, {"medicine_name": None})
+    assert sanitized_2["medicine_name"] is None
+
+    # Case 3: MFG after EXP chronology violation
+    raw_ai_data_3 = {
+        "medicine_name": "Metformin",
+        "batch_number": "MET101",
+        "manufacturing_date": "10/2028",
+        "expiry_date": "05/2027",
+    }
+    sanitized_3, issues_3 = ValidationService.validate_gemma_output(raw_ai_data_3, {"expiry_date": None, "manufacturing_date": None})
+    assert sanitized_3["expiry_date"] is None
+    assert sanitized_3["manufacturing_date"] is None
+    assert any("after expiry date" in i.lower() for i in issues_3)
+
+@pytest.mark.anyio
+async def test_zero_fake_defaults_when_unreadable():
+    """When pricing and count are unreadable, system must NOT fabricate 10 pieces or 50.0 price"""
+    from backend.app.services.ai_service import scan_medicine_image
+
+    img = create_synthetic_medicine_image()
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG")
+    b64_str = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    mock_db = MagicMock()
+
+    with patch("backend.app.services.ai_service.OCRService.run_ocr") as mock_ocr:
+        mock_ocr.return_value = {
+            "success": True,
+            "bounding_boxes": [],
+            "raw_text": "PARACETAMOL 500 MG\nB.No: B12345\nExp Date: 08/2027",
+            "overall_confidence": 92.5,
+            "extracted_fields": {
+                "medicine_name": "Paracetamol",
+                "strength": "500 mg",
+                "batch_number": "B12345",
+                "manufacturing_date": "08/2024",
+                "expiry_date": "08/2027",
+                "quantity": None,  # No quantity detected!
+            },
+            "field_confidences": {
+                "medicine_name": 94.0,
+                "strength": 91.0,
+                "batch_number": 87.0,
+                "manufacturing_date": 85.0,
+                "expiry_date": 92.5,
+            },
+            "diagnostics": {"is_blurry": False},
+        }
+
+        response = await scan_medicine_image(
+            db=mock_db,
+            pharmacy_id="pharmacy-1",
+            image_base64=b64_str,
+        )
+
+        assert response.quantity is None
+        assert response.extracted_data.get("price_per_strip") is None
+
+

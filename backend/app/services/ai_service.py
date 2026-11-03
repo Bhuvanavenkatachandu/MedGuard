@@ -21,20 +21,22 @@ Our first-stage Tesseract OCR identified certain fields, but some were flagged a
 
 IMPORTANT INSTRUCTIONS:
 1. Examine the packaging closely for Medicine Name, Active Composition, Strength, Batch Number, Manufacturing Date, and Expiry Date.
-2. If text is blurry, truncated, or genuinely not visible on the packaging, DO NOT GUESS OR HALLUCINATE. Return null or "Unknown".
-3. Return STRICT JSON ONLY without markdown wraps:
+2. If text is blurry, truncated, or genuinely not visible on the packaging, DO NOT GUESS OR HALLUCINATE. Return null.
+3. NEVER fabricate prices or quantity counts. If price or quantity is not explicitly stamped on the packaging, return null.
+4. If an expiry date or manufacturing date is only partially visible or invalid, return null rather than making up a calendar date.
+5. Return STRICT JSON ONLY without markdown wraps:
 {
-  "medicine_name": "Full medicine commercial name (e.g. Paracetamol, Augmentin 625 Duo)",
-  "generic_name": "Active pharmaceutical ingredient (e.g. Paracetamol Tablets IP)",
-  "brand": "Brand or marketer name",
-  "strength": "e.g. 500 mg, 650 mg, 10 ml",
-  "manufacturer": "Manufacturing pharmaceutical company name",
+  "medicine_name": "Full medicine commercial name or null",
+  "generic_name": "Active pharmaceutical ingredient or null",
+  "brand": "Brand or marketer name or null",
+  "strength": "e.g. 500 mg, 650 mg, 10 ml or null",
+  "manufacturer": "Manufacturing pharmaceutical company name or null",
   "batch_number": "Batch or Lot number if visible, otherwise null",
-  "manufacturing_date": "MM/YYYY or YYYY-MM if visible, otherwise null",
-  "expiry_date": "MM/YYYY or YYYY-MM if visible, otherwise null",
-  "pieces_per_strip": 10,
+  "manufacturing_date": "MM/YYYY or DD/MM/YYYY if visible, otherwise null",
+  "expiry_date": "MM/YYYY or DD/MM/YYYY if visible, otherwise null",
+  "pieces_per_strip": null,
   "unit_of_measure": "tablet",
-  "price_per_strip": 50.0,
+  "price_per_strip": null,
   "confidence_score": 92.0,
   "issues": ["list any packaging readability issues or missing details"]
 }
@@ -56,6 +58,77 @@ def decode_image_base64(image_base64: str) -> Tuple[Image.Image, str, str]:
     image = Image.open(io.BytesIO(image_bytes))
     return image, clean_base64, mime_type
 
+def image_to_base64(image: Image.Image) -> str:
+    buffered = io.BytesIO()
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    image.save(buffered, format="JPEG", quality=92)
+    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+def crop_uncertain_regions(
+    image: Image.Image,
+    bounding_boxes: List[Dict[str, Any]],
+    uncertain_fields: Dict[str, Any],
+) -> Tuple[Image.Image, bool, List[int]]:
+    """
+    Locates text regions corresponding to uncertain medicine fields (e.g., expiry or batch label areas)
+    and crops a focused subregion with contextual padding.
+    Minimizes prompt tokens and avoids sending the full high-res image when only a subregion is needed.
+    """
+    if not uncertain_fields or not bounding_boxes:
+        return image, False, []
+
+    field_keywords: Dict[str, List[str]] = {
+        "batch_number": ["batch", "b.no", "b.no.", "lot", "b.n.", "bno", "b."],
+        "expiry_date": ["exp", "expiry", "date", "use", "before", "e.d.", "valid"],
+        "manufacturing_date": ["mfg", "mfd", "m.d.", "date", "manuf"],
+        "strength": ["mg", "ml", "mcg", "gm", "g", "%", "iu"],
+        "medicine_name": [],
+    }
+
+    matching_boxes = []
+    w_img, h_img = image.width, image.height
+
+    for field in uncertain_fields.keys():
+        keywords = field_keywords.get(field, [])
+        for item in bounding_boxes:
+            txt = item.get("text", "").lower().strip()
+            if any(kw in txt for kw in keywords):
+                matching_boxes.append(item["box"])
+            uncertain_val = uncertain_fields.get(field)
+            if uncertain_val and str(uncertain_val).lower() in txt:
+                matching_boxes.append(item["box"])
+
+    if not matching_boxes:
+        # If medicine_name is the only uncertain field, crop top 45% of image
+        if list(uncertain_fields.keys()) == ["medicine_name"]:
+            top_box = (0, 0, w_img, int(h_img * 0.45))
+            cropped = image.crop(top_box)
+            return cropped, True, [0, 0, w_img, int(h_img * 0.45)]
+        return image, False, []
+
+    min_x = min(b["x"] for b in matching_boxes)
+    min_y = min(b["y"] for b in matching_boxes)
+    max_x = max(b["x"] + b["width"] for b in matching_boxes)
+    max_y = max(b["y"] + b["height"] for b in matching_boxes)
+
+    # Contextual padding: add 40px horizontal, 35px vertical + extra width/height to capture adjacent values
+    pad_x = 40
+    pad_y = 35
+    crop_x1 = max(0, min_x - pad_x)
+    crop_y1 = max(0, min_y - pad_y)
+    crop_x2 = min(w_img, max_x + pad_x + 80)
+    crop_y2 = min(h_img, max_y + pad_y + 40)
+
+    if (crop_x2 - crop_x1) < 80 or (crop_y2 - crop_y1) < 40:
+        return image, False, []
+
+    if (crop_x2 - crop_x1) * (crop_y2 - crop_y1) > 0.85 * (w_img * h_img):
+        return image, False, []
+
+    cropped = image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+    return cropped, True, [crop_x1, crop_y1, crop_x2 - crop_x1, crop_y2 - crop_y1]
+
 async def call_gemma_vision(
     image_base64_clean: str,
     mime_type: str,
@@ -65,14 +138,16 @@ async def call_gemma_vision(
     """
     Calls Gemma 4 Vision (or Gemini Flash fallback models) with targeted recovery context.
     """
-    models = [
-        "gemma-4-26b-a4b-it",
-        "gemma-4-31b-it",
-        "gemini-3.8-flash",
-        "gemini-3.5-flash",
-        "gemini-flash-latest",
-        "gemini-flash-lite-latest",
-    ]
+    primary = getattr(settings, "PRIMARY_VISION_MODEL", "gemma-4-26b-a4b-it")
+    fallback = getattr(settings, "FALLBACK_VISION_MODEL", "gemini-3.8-flash")
+    raw_models = [primary, fallback, "gemma-4-26b-a4b-it", "gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+    
+    seen = set()
+    models = []
+    for m in raw_models:
+        if m and m not in seen:
+            seen.add(m)
+            models.append(m)
 
     extracted_content = ""
     error_msg = ""
@@ -149,11 +224,12 @@ async def scan_medicine_image(
     Hybrid Medicine Image Processing Architecture:
     1. Medicine Image Ingestion & Preprocessing
     2. Tesseract OCR (text, bounding boxes, confidence)
-    3. Multi-Factor Validation Layer:
+    3. Multi-Factor Field-Level Validation Layer:
        - TRUSTED PATH: OCR passes all validation rules -> return structured data (0 AI API calls).
-       - UNCERTAIN PATH: OCR confidence low or missing fields -> route to Gemma 4 Vision for targeted recovery.
-    4. Intelligent Merge (OCR trusted fields + Gemma recovered fields).
-    5. Standardized response with transparent explainability metadata.
+       - UNCERTAIN PATH: OCR confidence low or missing fields -> Targeted crop -> Gemma Vision for targeted recovery.
+    4. Second Validation Gate on Gemma's output to block hallucinations.
+    5. Intelligent Merge (OCR trusted fields + Gemma validated recovered fields).
+    6. Standardized response with transparent explainability metadata.
     """
     # 1. Decode Image
     try:
@@ -169,6 +245,8 @@ async def scan_medicine_image(
                 ocr_confidence=0.0,
                 validation="uncertain",
                 ai_fallback_used=False,
+                ai_fields_requested=[],
+                targeted_crop_used=False,
                 reason=[f"Invalid or corrupted image format: {str(e)}"],
             ),
             needs_manual_verification=True,
@@ -208,6 +286,7 @@ async def scan_medicine_image(
         # ---------------------------------------------------------
         # TRUSTED PATH: OCR passed validation completely!
         # Do NOT call Gemma Vision API. Save cost and minimize latency.
+        # Zero fake defaults for quantity or price.
         # ---------------------------------------------------------
         norm_data = validation.normalized_data
         medicine_name = norm_data.get("medicine_name") or ""
@@ -215,7 +294,7 @@ async def scan_medicine_image(
         batch_number = norm_data.get("batch_number") or ""
         mfg_date = norm_data.get("manufacturing_date") or ""
         exp_date = norm_data.get("expiry_date") or ""
-        quantity = norm_data.get("quantity") or 10
+        quantity = norm_data.get("quantity")  # None if not explicitly read
 
         extracted_data_payload = {
             "medicine_name": medicine_name,
@@ -228,7 +307,7 @@ async def scan_medicine_image(
             "expiry_date": exp_date,
             "pieces_per_strip": quantity,
             "unit_of_measure": "tablet",
-            "price_per_strip": 50.0,
+            "price_per_strip": None,
         }
 
         processing_meta = ProcessingMetadata(
@@ -236,6 +315,8 @@ async def scan_medicine_image(
             ocr_confidence=validation.overall_confidence,
             validation="trusted",
             ai_fallback_used=False,
+            ai_fields_requested=[],
+            targeted_crop_used=False,
             reason=[],
         )
 
@@ -279,8 +360,9 @@ async def scan_medicine_image(
 
     # -------------------------------------------------------------
     # UNCERTAIN PATH: OCR confidence was low, format invalid, or fields missing
-    # Route image to Gemma 4 Vision for targeted visual recovery
+    # Target uncertain fields -> Crop subregion -> Route to Gemma Vision
     # -------------------------------------------------------------
+    ai_fields_requested = list(validation.uncertain_fields.keys())
     gemma_api_key = settings.GEMMA_API_KEY
     if not gemma_api_key or gemma_api_key.startswith("PASTE") or "placeholder" in gemma_api_key:
         # Graceful handling if AI key is missing in development
@@ -294,15 +376,17 @@ async def scan_medicine_image(
             "batch_number": norm_data.get("batch_number") or "",
             "manufacturing_date": norm_data.get("manufacturing_date") or "",
             "expiry_date": norm_data.get("expiry_date") or "",
-            "pieces_per_strip": norm_data.get("quantity") or 10,
+            "pieces_per_strip": norm_data.get("quantity"),
             "unit_of_measure": "tablet",
-            "price_per_strip": 50.0,
+            "price_per_strip": None,
         }
         processing_meta = ProcessingMetadata(
             ocr_used=ocr_used,
             ocr_confidence=validation.overall_confidence,
             validation="uncertain",
             ai_fallback_used=False,
+            ai_fields_requested=ai_fields_requested,
+            targeted_crop_used=False,
             reason=validation.reasons + ["Gemma Vision API key not configured for fallback"],
         )
         return AIScanResponse(
@@ -324,8 +408,23 @@ async def scan_medicine_image(
             warning="AI Vision fallback key not configured. Please confirm fields manually.",
         )
 
+    # Execute Targeted Cropping: crop subregion when bounding boxes exist
+    img_for_ai, crop_used, crop_box = crop_uncertain_regions(
+        image=image,
+        bounding_boxes=bounding_boxes_raw,
+        uncertain_fields=validation.uncertain_fields,
+    )
+    if crop_used:
+        ai_base64 = image_to_base64(img_for_ai)
+        ai_mime = "image/jpeg"
+    else:
+        ai_base64 = clean_base64
+        ai_mime = mime_type
+
     # Build targeted prompt context informing Gemma what OCR found vs what is missing
     targeted_context = (
+        f"Targeted Recovery Mode: {'Focused subregion crop' if crop_used else 'Full image'}\n"
+        f"Fields Requiring Recovery: {', '.join(ai_fields_requested)}\n"
         f"OCR Success: {ocr_used}\n"
         f"OCR Overall Confidence: {validation.overall_confidence}%\n"
         f"Trusted Fields Already Extracted by OCR: {json.dumps(validation.trusted_fields)}\n"
@@ -334,70 +433,62 @@ async def scan_medicine_image(
     )
 
     parsed_ai_data, raw_ai_response, ai_error = await call_gemma_vision(
-        image_base64_clean=clean_base64,
-        mime_type=mime_type,
+        image_base64_clean=ai_base64,
+        mime_type=ai_mime,
         targeted_context=targeted_context,
         gemma_api_key=gemma_api_key,
     )
 
-    # Intelligent Merge: Combine OCR trusted fields + Gemma recovered fields
+    # Stage 4: Second Validation Gate (Sanitize & validate Gemma output)
+    sanitized_ai_data, ai_issues = ValidationService.validate_gemma_output(
+        raw_ai_data=parsed_ai_data,
+        uncertain_fields=validation.uncertain_fields,
+    )
+
+    # Stage 5: Intelligent Merge: Combine OCR trusted fields + Gemma validated recovered fields
     merged_data: Dict[str, Any] = dict(validation.normalized_data)
-    ai_confidence = float(parsed_ai_data.get("confidence_score", 90.0 if parsed_ai_data.get("medicine_name") else 35.0))
+    ai_confidence = float(parsed_ai_data.get("confidence_score", 90.0 if sanitized_ai_data.get("medicine_name") else 35.0))
 
-    # Overwrite uncertain fields with Gemma's recovered fields if provided and non-empty
+    # Overwrite uncertain fields ONLY with validated, non-null recovered fields
     for field in ["medicine_name", "strength", "batch_number", "manufacturing_date", "expiry_date", "quantity"]:
-        val = parsed_ai_data.get(field)
-        if field in validation.uncertain_fields or not merged_data.get(field):
-            if val is not None and str(val).strip() and str(val).lower() not in ["null", "none", "unknown"]:
-                merged_data[field] = val
+        val = sanitized_ai_data.get(field)
+        if (field in validation.uncertain_fields or not merged_data.get(field)) and val is not None:
+            merged_data[field] = val
 
-    # Normalize dates if Gemma provided them in another format
-    if merged_data.get("expiry_date"):
-        _, norm_exp = ValidationService._parse_and_normalize_date(str(merged_data["expiry_date"]))
-        if norm_exp:
-            merged_data["expiry_date"] = norm_exp
-
-    if merged_data.get("manufacturing_date"):
-        _, norm_mfg = ValidationService._parse_and_normalize_date(str(merged_data["manufacturing_date"]))
-        if norm_mfg:
-            merged_data["manufacturing_date"] = norm_mfg
-
-    # Check if critical fields are resolved
+    # Verify if critical fields are resolved
     has_med = bool(merged_data.get("medicine_name"))
     has_batch = bool(merged_data.get("batch_number"))
     has_exp = bool(merged_data.get("expiry_date"))
 
-    is_recovered = has_med and has_batch and has_exp and ai_confidence >= 70.0
+    is_recovered = has_med and has_batch and has_exp and ai_confidence >= 70.0 and len(ai_issues) == 0
     final_validation_status = "ai_validated" if is_recovered else "uncertain"
     final_confidence = round(max(validation.overall_confidence, ai_confidence) if is_recovered else ai_confidence, 1)
 
-    # Compile frontend payload
+    # Compile frontend payload with ZERO fake defaults
     extracted_data_payload = {
         "medicine_name": merged_data.get("medicine_name") or "",
-        "generic_name": parsed_ai_data.get("generic_name") or "",
-        "brand": parsed_ai_data.get("brand") or "",
+        "generic_name": sanitized_ai_data.get("generic_name") or "",
+        "brand": sanitized_ai_data.get("brand") or "",
         "strength": merged_data.get("strength") or "",
-        "manufacturer": parsed_ai_data.get("manufacturer") or "",
+        "manufacturer": sanitized_ai_data.get("manufacturer") or "",
         "batch_number": merged_data.get("batch_number") or "",
         "manufacturing_date": merged_data.get("manufacturing_date") or "",
         "expiry_date": merged_data.get("expiry_date") or "",
-        "pieces_per_strip": int(merged_data.get("quantity") or parsed_ai_data.get("pieces_per_strip") or 10),
-        "unit_of_measure": parsed_ai_data.get("unit_of_measure", "tablet"),
-        "price_per_strip": float(parsed_ai_data.get("price_per_strip", 50.0) or 50.0),
+        "pieces_per_strip": merged_data.get("quantity") or sanitized_ai_data.get("pieces_per_strip"),
+        "unit_of_measure": sanitized_ai_data.get("unit_of_measure") or "tablet",
+        "price_per_strip": sanitized_ai_data.get("price_per_strip"),
     }
 
-    issues_list = list(validation.reasons)
-    if parsed_ai_data.get("issues"):
-        for issue in parsed_ai_data["issues"]:
-            if issue not in issues_list:
-                issues_list.append(issue)
+    issues_list = list(validation.reasons) + ai_issues
 
     processing_meta = ProcessingMetadata(
         ocr_used=ocr_used,
         ocr_confidence=validation.overall_confidence,
         validation="uncertain",
         ai_fallback_used=True,
-        reason=validation.reasons,
+        ai_fields_requested=ai_fields_requested,
+        targeted_crop_used=crop_used,
+        reason=issues_list,
     )
 
     # Save to database

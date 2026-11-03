@@ -22,6 +22,8 @@ class ProcessingMetadata(BaseModel):
     ocr_confidence: float = 0.0
     validation: str = "uncertain"  # "trusted" | "uncertain"
     ai_fallback_used: bool = False
+    ai_fields_requested: List[str] = Field(default_factory=list)
+    targeted_crop_used: bool = False
     reason: List[str] = Field(default_factory=list)
 
 class ExtractedMedicineData(BaseModel):
@@ -33,10 +35,10 @@ class ExtractedMedicineData(BaseModel):
     batch_number: Optional[str] = None
     manufacturing_date: Optional[str] = None
     expiry_date: Optional[str] = None
-    quantity: Optional[int] = 10
-    pieces_per_strip: Optional[int] = 10
+    quantity: Optional[int] = None
+    pieces_per_strip: Optional[int] = None
     unit_of_measure: Optional[str] = "tablet"
-    price_per_strip: Optional[float] = 50.0
+    price_per_strip: Optional[float] = None
 
 class AIScanResponse(BaseModel):
     # Standard Hybrid Unified Fields
@@ -45,7 +47,7 @@ class AIScanResponse(BaseModel):
     batch_number: Optional[str] = None
     manufacturing_date: Optional[str] = None
     expiry_date: Optional[str] = None
-    quantity: Optional[int] = 10
+    quantity: Optional[int] = None
     source: str = "tesseract"  # "tesseract" | "gemma" | "hybrid"
     confidence: float = 0.0
     validation_status: str = "trusted"  # "trusted" | "ai_validated" | "uncertain"
