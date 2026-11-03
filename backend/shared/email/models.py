@@ -1,0 +1,33 @@
+"""EmailLog database model."""
+
+import uuid
+from datetime import datetime
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+
+from backend.shared.database import Base
+
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pharmacy_id = Column(String(36), ForeignKey("pharmacies.id", ondelete="CASCADE"), nullable=False, index=True)
+    invoice_id = Column(String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_email = Column(String(255), nullable=False)
+    status = Column(String(50), nullable=False)  # 'sent', 'failed', 'pending', 'skipped'
+    error_message = Column(Text, nullable=True)
+    message_id = Column("resend_id", String(100), nullable=True)  # email tracking ID
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def resend_id(self):
+        return self.message_id
+
+    @resend_id.setter
+    def resend_id(self, value):
+        self.message_id = value
+
+    # Relationships
+    pharmacy = relationship("Pharmacy", back_populates="email_logs")
+    invoice = relationship("Invoice", back_populates="email_logs")

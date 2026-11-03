@@ -1,20 +1,22 @@
-from backend.app.models.user import User
-from backend.app.models.pharmacy import Pharmacy
-from backend.app.models.medicine import Medicine
-from backend.app.models.supplier import Supplier
-from backend.app.models.batch import Batch
-from backend.app.models.inventory import Inventory
-from backend.app.models.customer import Customer
-from backend.app.models.sale import Sale, SaleItem
-from backend.app.models.invoice import Invoice
-from backend.app.models.ai_scan import AIScan
-from backend.app.models.search_session import SearchSession
-from backend.app.models.stock_movement import StockMovement
-from backend.app.models.email_log import EmailLog
-from backend.app.models.knowledge_document import KnowledgeDocument
-from backend.app.models.knowledge_chunk import KnowledgeChunk
-from backend.app.models.chat_session import ChatSession
-from backend.app.models.chat_message import ChatMessage
+"""MedGuard AI - Backward-Compatible Models Registry.
+
+Re-exports all ORM models from their respective feature packages.
+"""
+
+from backend.features.auth.models import User
+from backend.features.pharmacy.models import Pharmacy, SearchSession
+from backend.features.medicines.models import Medicine, Supplier
+from backend.features.inventory.models import Batch, Inventory, StockMovement
+from backend.features.customers.models import Customer
+from backend.features.billing.models import Sale, SaleItem, Invoice
+from backend.features.ai_recognition.models import AIScan
+from backend.shared.email.models import EmailLog
+from backend.features.chatbot.models import (
+    KnowledgeDocument,
+    KnowledgeChunk,
+    ChatSession,
+    ChatMessage,
+)
 
 __all__ = [
     "User",

@@ -13,24 +13,22 @@ from backend.app.config import settings
 from backend.app.database import engine, Base
 import backend.app.models
 
-# Routers
-from backend.app.routers import (
-    auth,
-    pharmacies,
-    medicines,
-    suppliers,
-    batches,
-    inventory,
-    customers,
-    sales,
-    invoices,
-    movements,
-    ai,
-    reports,
-    public,
-    knowledge,
-    chat,
-)
+# Feature Routers
+from backend.features.auth.router import router as auth_router
+from backend.features.pharmacy.router import router as pharmacies_router
+from backend.features.pharmacy.public_router import router as public_router
+from backend.features.medicines.router import router as medicines_router
+from backend.features.medicines.suppliers_router import router as suppliers_router
+from backend.features.inventory.batches_router import router as batches_router
+from backend.features.inventory.router import router as inventory_router
+from backend.features.inventory.movements_router import router as movements_router
+from backend.features.customers.router import router as customers_router
+from backend.features.billing.sales_router import router as sales_router
+from backend.features.billing.invoices_router import router as invoices_router
+from backend.features.ai_recognition.router import router as ai_router
+from backend.features.reports.router import router as reports_router
+from backend.features.chatbot.knowledge.router import router as knowledge_router
+from backend.features.chatbot.router import router as chat_router
 
 from sqlalchemy import text
 
@@ -78,22 +76,22 @@ def health_check():
         "database": db_status,
     }
 
-# Register Routers
-app.include_router(auth.router)
-app.include_router(pharmacies.router)
-app.include_router(medicines.router)
-app.include_router(suppliers.router)
-app.include_router(batches.router)
-app.include_router(inventory.router)
-app.include_router(customers.router)
-app.include_router(sales.router)
-app.include_router(invoices.router)
-app.include_router(movements.router)
-app.include_router(ai.router)
-app.include_router(reports.router)
-app.include_router(public.router)
-app.include_router(knowledge.router)
-app.include_router(chat.router)
+# Register Feature Routers
+app.include_router(auth_router)
+app.include_router(pharmacies_router)
+app.include_router(medicines_router)
+app.include_router(suppliers_router)
+app.include_router(batches_router)
+app.include_router(inventory_router)
+app.include_router(customers_router)
+app.include_router(sales_router)
+app.include_router(invoices_router)
+app.include_router(movements_router)
+app.include_router(ai_router)
+app.include_router(reports_router)
+app.include_router(public_router)
+app.include_router(knowledge_router)
+app.include_router(chat_router)
 
 # Mount Frontend Built SPA (dist/)
 dist_path = Path(__file__).resolve().parent.parent.parent / "dist"

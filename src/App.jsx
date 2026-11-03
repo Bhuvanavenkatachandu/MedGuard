@@ -1,26 +1,31 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { PharmacyProvider } from './context/PharmacyContext';
-import { LandingPage } from './components/landing/LandingPage';
-import { CustomerDiscovery } from './components/customer/CustomerDiscovery';
-import { PharmacistLogin } from './components/auth/PharmacistLogin';
-import { PharmacistRegister } from './components/auth/PharmacistRegister';
-import { PharmacySetup } from './components/auth/PharmacySetup';
-import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { PharmacistLayout } from './components/layout/PharmacistLayout';
-import { Dashboard } from './components/dashboard/Dashboard';
-import { InventoryList } from './components/inventory/InventoryList';
-import { AddStock } from './components/inventory/AddStock';
-import { AiScanner } from './components/ai/AiScanner';
-import { PointOfSale } from './components/pos/PointOfSale';
-import { ExpiryManagement } from './components/inventory/ExpiryManagement';
-import { CustomerManagement } from './components/customers/CustomerManagement';
-import { SupplierManagement } from './components/suppliers/SupplierManagement';
-import { InvoiceList } from './components/invoices/InvoiceList';
-import { Reports } from './components/reports/Reports';
-import { StockMovements } from './components/movements/StockMovements';
-import { PharmacistChat } from './components/chat/PharmacistChat';
-import { KnowledgeBase } from './components/knowledge/KnowledgeBase';
+
+// Shared Layout & Context
+import { PharmacyProvider } from './shared/context/PharmacyContext';
+import { LandingPage } from './shared/components/landing/LandingPage';
+import { PharmacistLayout } from './shared/components/layout/PharmacistLayout';
+
+// Features
+import {
+  PharmacistLogin,
+  PharmacistRegister,
+  PharmacySetup,
+  ProtectedRoute,
+} from './features/auth';
+import { Dashboard, CustomerDiscovery } from './features/pharmacy';
+import { SupplierManagement } from './features/medicines';
+import {
+  InventoryList,
+  AddStock,
+  ExpiryManagement,
+  StockMovements,
+} from './features/inventory';
+import { PointOfSale, InvoiceList } from './features/billing';
+import { CustomerManagement } from './features/customers';
+import { Reports } from './features/reports';
+import { AiScanner } from './features/ai_recognition';
+import { PharmacistChat, KnowledgeBase } from './features/chatbot';
 
 /**
  * Pharmacist Portal Shell
