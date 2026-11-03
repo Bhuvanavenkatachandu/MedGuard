@@ -1,8 +1,18 @@
+"""
+MedGuard AI - Nearby Medicine Search Service
+=============================================
+Provides public medicine discovery across pharmacies:
+- Uses the Haversine trigonometric formula to calculate distance between user coordinates
+  and pharmacy locations on Earth's spherical surface.
+- Filters out expired batches and zero-stock inventory records.
+- Aggregates available stock quantities across batches.
+- Generates direct Google Maps navigation links.
+"""
+
 import math
 from datetime import date
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from backend.app.models.pharmacy import Pharmacy
 from backend.app.models.medicine import Medicine
@@ -11,9 +21,17 @@ from backend.app.models.inventory import Inventory
 from backend.app.models.search_session import SearchSession
 from backend.app.schemas.public import PublicMedicineSearchItem
 
+
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    # Earth radius in kilometers
-    R = 6371.0
+    """
+    Calculates the great-circle distance between two geographic coordinates in kilometers.
+    
+    Formula:
+        a = sin²(Δlat/2) + cos(lat1) * cos(lat2) * sin²(Δlon/2)
+        c = 2 * atan2(√a, √(1-a))
+        d = R * c (where R = 6,371 km)
+    """
+    earth_radius_km = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = (
@@ -23,7 +41,8 @@ def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) ->
         * math.sin(dlon / 2.0) ** 2
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return round(R * c, 2)
+    return round(earth_radius_km * c, 2)
+
 
 def search_nearby_medicines(
     db: Session,
@@ -33,10 +52,21 @@ def search_nearby_medicines(
     max_distance_km: float = 100.0,
     session_token: Optional[str] = None,
 ) -> List[PublicMedicineSearchItem]:
+    """
+    Searches for medicine availability in nearby pharmacies within a maximum radius.
+    
+    Workflow:
+    1. Query all inventory items joined with unexpired batches (Batch.expiry_date >= today).
+    2. Filter by search query across medicine name, generic name, brand, and strength.
+    3. Calculate distance to each pharmacy and filter by max_distance_km.
+    4. Aggregate stock across batches per (medicine_id, pharmacy_id) pair.
+    5. Sort results with the closest pharmacy first.
+    6. Log the search session for discovery analytics.
+    """
     today = date.today()
     clean_query = query.strip().lower() if query else ""
 
-    # Query active inventory with valid batches, medicines, and pharmacies
+    # Fetch active inventory with unexpired batches
     rows = (
         db.query(Inventory, Medicine, Batch, Pharmacy)
         .join(Medicine, Medicine.id == Inventory.medicine_id)
@@ -49,11 +79,10 @@ def search_nearby_medicines(
         .all()
     )
 
-    # Aggregate by (medicine_id, pharmacy_id)
     aggregated = {}
 
     for inv, med, batch, pharm in rows:
-        # Check query match if query is specified
+        # Match search term across medicine attributes
         if clean_query:
             med_text = f"{med.name} {med.generic_name or ''} {med.brand or ''} {med.strength or ''}".lower()
             if clean_query not in med_text:
@@ -65,7 +94,11 @@ def search_nearby_medicines(
 
         key = (med.id, pharm.id)
         if key not in aggregated:
-            directions_url = f"https://www.google.com/maps/dir/?api=1&origin={user_lat},{user_lng}&destination={pharm.latitude},{pharm.longitude}"
+            directions_url = (
+                f"https://www.google.com/maps/dir/?api=1"
+                f"&origin={user_lat},{user_lng}"
+                f"&destination={pharm.latitude},{pharm.longitude}"
+            )
             aggregated[key] = {
                 "medicine_id": med.id,
                 "medicine_name": med.name,
@@ -88,7 +121,7 @@ def search_nearby_medicines(
             }
 
         aggregated[key]["available_pieces"] += inv.total_pieces
-        # Take the maximum price if multiple batches
+        # Reflect highest price if multiple batches are in stock
         if inv.price_per_strip > aggregated[key]["price_per_strip"]:
             aggregated[key]["price_per_strip"] = inv.price_per_strip
             aggregated[key]["price_per_piece"] = inv.price_per_piece
@@ -101,10 +134,10 @@ def search_nearby_medicines(
         data["loose_pieces"] = total_p % pps
         results.append(PublicMedicineSearchItem(**data))
 
-    # Sort results by closest distance first
+    # Sort results with nearest pharmacies first
     results.sort(key=lambda x: x.distance_km)
 
-    # Log search session
+    # Record search session for public discovery telemetry
     try:
         token = session_token or f"SS-{int(today.strftime('%Y%m%d'))}-{len(results)}"
         session_record = SearchSession(

@@ -1,3 +1,10 @@
+"""
+MedGuard AI - Pharmacy Profile Service
+=======================================
+Manages pharmacy registration, configuration, contact metadata, geolocation,
+and near-expiry threshold settings for the tenant.
+"""
+
 from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -5,10 +12,14 @@ from backend.app.models.user import User
 from backend.app.models.pharmacy import Pharmacy
 from backend.app.schemas.pharmacy import PharmacyCreateRequest, PharmacyUpdateRequest, PharmacyOut
 
+
 def create_pharmacy_for_user(db: Session, user: User, req: PharmacyCreateRequest) -> PharmacyOut:
+    """
+    Creates or updates the pharmacy profile associated with a user.
+    If a pharmacy already exists for this user, updates its details idempotently.
+    """
     existing = db.query(Pharmacy).filter(Pharmacy.owner_user_id == user.id).first()
     if existing:
-        # User already has a pharmacy, update fields and return
         existing.name = req.name.strip()
         existing.owner_name = (req.ownerName or req.owner_name or user.name).strip()
         existing.phone = req.phone.strip()
@@ -49,13 +60,17 @@ def create_pharmacy_for_user(db: Session, user: User, req: PharmacyCreateRequest
     db.refresh(new_pharmacy)
     return PharmacyOut.model_validate(new_pharmacy)
 
+
 def get_pharmacy_by_user(db: Session, user: User) -> Optional[PharmacyOut]:
+    """Retrieve pharmacy profile for the given user, or None if not yet created."""
     pharmacy = db.query(Pharmacy).filter(Pharmacy.owner_user_id == user.id).first()
     if not pharmacy:
         return None
     return PharmacyOut.model_validate(pharmacy)
 
+
 def update_pharmacy(db: Session, pharmacy: Pharmacy, req: PharmacyUpdateRequest) -> PharmacyOut:
+    """Updates fields on an existing pharmacy profile."""
     if req.name is not None:
         pharmacy.name = req.name.strip()
     if req.owner_name is not None:

@@ -28,6 +28,7 @@ import { generateInvoicePdf } from '../../utils/pdfGenerator';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { formatMedicineDate } from '../../utils/dateFormatter';
+import { PostSaleModal } from './PostSaleModal';
 
 export const PointOfSale = ({ onSaleComplete }) => {
   const navigate = useNavigate();
@@ -801,117 +802,18 @@ export const PointOfSale = ({ onSaleComplete }) => {
       </div>
 
       {/* Post-Sale Completion Modal */}
-      {completedSale && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 space-y-4">
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <h3 className="text-lg font-extrabold text-slate-900">
-                Payment & Sale Completed!
-              </h3>
-              <p className="text-xs text-slate-500 font-mono">
-                Invoice No: <strong>{completedSale?.sale?.invoice_number || completedSale?.invoice_number || completedSale?.sale_number}</strong>
-              </p>
-              {countdown !== null && (
-                <div className="inline-flex items-center gap-1.5 bg-blue-50 text-primary text-xs font-semibold px-3 py-1 rounded-full border border-blue-100">
-                  <Clock className="w-3.5 h-3.5 animate-spin" />
-                  <span>Redirecting to Dashboard in {countdown}s...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Status Checklist */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-emerald-700 font-semibold">
-                <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Sale successful & inventory updated</span>
-                </span>
-                <span className="text-[10px] uppercase font-mono">Atomic Done</span>
-              </div>
-
-              <div className="flex items-center justify-between text-emerald-700 font-semibold">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-emerald-600" />
-                  <span>Invoice PDF generated & archived</span>
-                </span>
-                <span className="text-[10px] uppercase font-mono">PDF Ready</span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Mail className={`w-4 h-4 ${
-                    completedSale.emailStatus === 'sent' 
-                      ? 'text-emerald-600' 
-                      : completedSale.emailStatus === 'failed' 
-                      ? 'text-rose-600' 
-                      : 'text-slate-400'
-                  }`} />
-                  <span className={`font-semibold ${
-                    completedSale.emailStatus === 'sent' 
-                      ? 'text-emerald-700' 
-                      : completedSale.emailStatus === 'failed' 
-                      ? 'text-rose-700' 
-                      : 'text-slate-600'
-                  }`}>
-                    {completedSale.emailStatus === 'sent' 
-                      ? `Invoice emailed to ${completedSale?.sale?.customer_email || completedSale?.customer_email}` 
-                      : completedSale.emailStatus === 'failed' 
-                      ? 'Email delivery failed (Check mail configuration)' 
-                      : 'No email provided by customer'}
-                  </span>
-                </span>
-
-                {completedSale.emailStatus === 'failed' && (
-                  <button
-                    onClick={handleResendEmail}
-                    disabled={resendingEmail}
-                    className="text-xs bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold px-2 py-0.5 rounded transition-colors"
-                  >
-                    {resendingEmail ? 'Retrying...' : 'Resend Invoice'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownloadPdf}
-                leftIcon={<Download className="w-4 h-4 text-primary" />}
-              >
-                Download PDF
-              </Button>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setCountdown(null);
-                    setCompletedSale(null);
-                  }}
-                >
-                  Stay on POS
-                </Button>
-
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleGoToDashboard}
-                  rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
-                >
-                  Go to Dashboard {countdown !== null && `(${countdown}s)`}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PostSaleModal
+        completedSale={completedSale}
+        countdown={countdown}
+        resendingEmail={resendingEmail}
+        onResendEmail={handleResendEmail}
+        onDownloadPdf={handleDownloadPdf}
+        onStayOnPos={() => {
+          setCountdown(null);
+          setCompletedSale(null);
+        }}
+        onGoToDashboard={handleGoToDashboard}
+      />
     </div>
   );
 };

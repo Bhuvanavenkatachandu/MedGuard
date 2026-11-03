@@ -1,3 +1,14 @@
+/**
+ * MedGuard AI - Central Pharmacy Context & State Provider
+ * ========================================================
+ * Provides reactive global state for:
+ * - Active authenticated pharmacist session (JWT stored in localStorage)
+ * - Registered pharmacy tenant profile
+ * - Inventory, medicine, batch, and customer datasets
+ * - Memoized executive metrics (expiring batches, low stock, revenue)
+ * - Atomic action handlers for stock intake, adjustments, and POS sales
+ */
+
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { authApi } from '../api/authApi';
 import { pharmaciesApi } from '../api/pharmaciesApi';
@@ -13,12 +24,28 @@ import { reportsApi } from '../api/reportsApi';
 
 const PharmacyContext = createContext(null);
 
+/**
+ * Normalizes FastAPI / Axios error payloads (string, array of validation errors, or object)
+ * into a single clean human-readable error message.
+ */
+const extractErrorMessage = (err, fallbackMessage = 'An unexpected error occurred') => {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d.msg || (typeof d === 'string' ? d : JSON.stringify(d))).join(', ');
+  }
+  if (typeof detail === 'object' && detail !== null) {
+    return detail.message || JSON.stringify(detail);
+  }
+  return err?.message || fallbackMessage;
+};
+
 export const PharmacyProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [pharmacy, setPharmacy] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Pharmacist Datasets
+  // Pharmacy Operational Datasets
   const [medicines, setMedicines] = useState([]);
   const [batches, setBatches] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -29,13 +56,13 @@ export const PharmacyProvider = ({ children }) => {
   const [stockMovements, setStockMovements] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
 
-  // Helper: Normalize phone numbers
+  // Normalizes 10-digit mobile numbers by stripping country codes & formatting symbols
   const normalizePhone = (phone) => {
     if (!phone) return '';
     return phone.replace(/[^0-9]/g, '').slice(-10);
   };
 
-  // Fetch all pharmacy operational records
+  // Reloads all operational datasets concurrently from backend REST endpoints
   const fetchPharmacyData = useCallback(async () => {
     try {
       const [
@@ -74,7 +101,7 @@ export const PharmacyProvider = ({ children }) => {
     }
   }, []);
 
-  // Initialize session from token on startup
+  // Initializes user session from persisted localStorage token on mount
   useEffect(() => {
     const initAuth = async () => {
       const token = localStorage.getItem('medguard_token');
@@ -89,21 +116,11 @@ export const PharmacyProvider = ({ children }) => {
         const userData = await authApi.getMe();
         setUser(userData);
 
-        if (userData.pharmacy_id) {
-          try {
-            const pharmData = await pharmaciesApi.getMyPharmacy();
-            setPharmacy(pharmData);
-          } catch (e) {
-            setPharmacy(null);
-          }
-        } else {
-          // Double check if a pharmacy exists for this user
-          try {
-            const pharmData = await pharmaciesApi.getMyPharmacy();
-            setPharmacy(pharmData);
-          } catch (e) {
-            setPharmacy(null);
-          }
+        try {
+          const pharmData = await pharmaciesApi.getMyPharmacy();
+          setPharmacy(pharmData);
+        } catch {
+          setPharmacy(null);
         }
       } catch (err) {
         console.warn('Invalid or expired token. Clearing session.');
@@ -118,7 +135,7 @@ export const PharmacyProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  // When pharmacy changes or activates, load its data
+  // Synchronizes datasets whenever the pharmacy ID becomes available or changes
   useEffect(() => {
     if (pharmacy?.id) {
       fetchPharmacyData();
@@ -135,7 +152,10 @@ export const PharmacyProvider = ({ children }) => {
     }
   }, [pharmacy?.id, fetchPharmacyData]);
 
-  // Auth: Register Pharmacist
+  // ---------------------------------------------------------------------------
+  // Authentication Actions
+  // ---------------------------------------------------------------------------
+
   const registerPharmacist = async (payload) => {
     try {
       const data = await authApi.register(payload);
@@ -146,30 +166,17 @@ export const PharmacyProvider = ({ children }) => {
       }
       return { success: true, user: data.user };
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      let msg = 'Registration failed';
-      if (typeof detail === 'string') {
-        msg = detail;
-      } else if (Array.isArray(detail)) {
-        msg = detail.map(d => d.msg || (typeof d === 'string' ? d : JSON.stringify(d))).join(', ');
-      } else if (typeof detail === 'object' && detail !== null) {
-        msg = detail.message || JSON.stringify(detail);
-      } else if (err.message) {
-        msg = err.message;
-      }
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Registration failed'));
     }
   };
 
-  // Auth: Resend Verification Email
   const resendVerificationEmail = async (targetEmail) => {
     return {
       success: true,
-      resendNotice: `Verification instructions sent to ${targetEmail}. You can also sign in directly.`
+      resendNotice: `Verification instructions sent to ${targetEmail}. You can also sign in directly.`,
     };
   };
 
-  // Auth: Login Pharmacist (Supports both object { email, password } and 2-arg (email, password))
   const loginPharmacist = async (emailOrObj, passwordArg) => {
     let email = '';
     let password = '';
@@ -188,38 +195,25 @@ export const PharmacyProvider = ({ children }) => {
         localStorage.setItem('medguard_token', data.access_token);
         setUser(data.user);
 
-        // Fetch user's registered pharmacy
         try {
           pharmData = await pharmaciesApi.getMyPharmacy();
           setPharmacy(pharmData);
-        } catch (e) {
+        } catch {
           setPharmacy(null);
         }
       }
-      return { 
-        success: true, 
+      return {
+        success: true,
         user: data.user,
         isEmailVerified: Boolean(data.user?.is_verified ?? true),
         isSetupComplete: Boolean(pharmData?.id || data.user?.pharmacy_id),
         email: data.user?.email || email,
       };
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      let msg = 'Invalid email or password';
-      if (typeof detail === 'string') {
-        msg = detail;
-      } else if (Array.isArray(detail)) {
-        msg = detail.map(d => d.msg || (typeof d === 'string' ? d : JSON.stringify(d))).join(', ');
-      } else if (typeof detail === 'object' && detail !== null) {
-        msg = detail.message || JSON.stringify(detail);
-      } else if (err.message) {
-        msg = err.message;
-      }
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Invalid email or password'));
     }
   };
 
-  // Auth: Logout Pharmacist
   const logoutPharmacist = async () => {
     await authApi.logout();
     localStorage.removeItem('medguard_token');
@@ -236,7 +230,10 @@ export const PharmacyProvider = ({ children }) => {
     setEmailLogs([]);
   };
 
-  // Setup Pharmacy Profile & Location
+  // ---------------------------------------------------------------------------
+  // Pharmacy Tenant Actions
+  // ---------------------------------------------------------------------------
+
   const setupPharmacy = async (formData) => {
     try {
       const pharmData = await pharmaciesApi.createPharmacy({
@@ -254,74 +251,70 @@ export const PharmacyProvider = ({ children }) => {
       });
 
       setPharmacy(pharmData);
-      // Refresh current user info
       const meData = await authApi.getMe();
       setUser(meData);
       await fetchPharmacyData();
       return { success: true, pharmacy: pharmData };
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to setup pharmacy';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to setup pharmacy profile'));
     }
   };
 
-  // Inward Stock Addition
+  // ---------------------------------------------------------------------------
+  // Inventory & Stock Intake Actions
+  // ---------------------------------------------------------------------------
+
   const addStock = async (stockData) => {
     try {
       const result = await inventoryApi.addStock(stockData);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to add stock';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to add stock'));
     }
   };
 
-  // Adjust Inventory Stock Count
   const adjustStock = async ({ inventoryId, newTotalPieces, reason }) => {
     try {
       const result = await inventoryApi.adjustStock(inventoryId, newTotalPieces, reason);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to adjust stock';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to adjust stock'));
     }
   };
 
-  // Delete Inventory Catalog Item
   const deleteInventoryItem = async (inventoryId) => {
     try {
       const result = await inventoryApi.deleteInventory(inventoryId);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to delete inventory item';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to delete inventory item'));
     }
   };
 
-  // Mark Batch Expired & Write-off
   const markBatchExpired = async (batchId) => {
     try {
       const result = await inventoryApi.markBatchExpired(batchId);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to write off expired batch';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to write off expired batch'));
     }
   };
 
-  // Medicine Management
+  // ---------------------------------------------------------------------------
+  // Catalog Management Actions
+  // ---------------------------------------------------------------------------
+
   const addMedicine = async (medData) => {
     try {
       const result = await medicinesApi.createMedicine(medData);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to add medicine';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to add medicine'));
     }
   };
 
@@ -331,8 +324,7 @@ export const PharmacyProvider = ({ children }) => {
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to update medicine';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to update medicine'));
     }
   };
 
@@ -342,67 +334,64 @@ export const PharmacyProvider = ({ children }) => {
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to delete medicine';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to delete medicine'));
     }
   };
 
-  // Create Supplier
   const addSupplier = async (supplierData) => {
     try {
       const result = await suppliersApi.createSupplier(supplierData);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to add supplier';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to add supplier'));
     }
   };
 
-  // Get or Create Customer
+  // ---------------------------------------------------------------------------
+  // Customer & POS Checkout Actions
+  // ---------------------------------------------------------------------------
+
   const getOrCreateCustomer = async (custData) => {
     try {
       const result = await customersApi.createCustomer(custData);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to save customer';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to save customer'));
     }
   };
 
-  // Search Customer by phone in local state or API
   const searchCustomerByPhone = (phone) => {
     const cleaned = normalizePhone(phone);
     if (!cleaned) return null;
-    return customers.find(c => normalizePhone(c.phone) === cleaned) || null;
+    return customers.find((c) => normalizePhone(c.phone) === cleaned) || null;
   };
 
-  // POS Sale Checkout & Atomic FEFO Stock Deduction
   const processSale = async (salePayload) => {
     try {
       const result = await salesApi.checkout(salePayload);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Sale checkout failed';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Sale checkout failed'));
     }
   };
 
-  // Resend Invoice Email Action
   const resendInvoiceEmail = async (invoiceId) => {
     try {
       const result = await invoicesApi.resendEmail(invoiceId);
       await fetchPharmacyData();
       return result;
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to resend invoice email';
-      throw new Error(msg);
+      throw new Error(extractErrorMessage(err, 'Failed to resend invoice email'));
     }
   };
 
-  // Computed Metrics for Dashboard & Inventory
+  // ---------------------------------------------------------------------------
+  // Computed Executive Metrics (Memoized for Performance)
+  // ---------------------------------------------------------------------------
+
   const metrics = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     const thresholdDays = pharmacy?.near_expiry_threshold_days || 30;
@@ -416,8 +405,8 @@ export const PharmacyProvider = ({ children }) => {
     const lowStockBatches = [];
 
     inventory.forEach((inv) => {
-      const batch = batches.find(b => b.id === inv.batch_id);
-      const med = medicines.find(m => m.id === inv.medicine_id);
+      const batch = batches.find((b) => b.id === inv.batch_id);
+      const med = medicines.find((m) => m.id === inv.medicine_id);
       const pieces = Number(inv.total_pieces) || 0;
       const price = Number(inv.price_per_piece) || 0;
 
@@ -478,7 +467,7 @@ export const PharmacyProvider = ({ children }) => {
     };
   }, [inventory, batches, medicines, sales, pharmacy]);
 
-  // Backward-compatible Profile object
+  // Backward-compatible Profile Object
   const profile = useMemo(() => {
     if (!user) return null;
     return {
@@ -497,7 +486,7 @@ export const PharmacyProvider = ({ children }) => {
     setPharmacy,
     loading,
     isAuthenticated: Boolean(user),
-    isEmailVerified: true, // Local JWT authentication is verified
+    isEmailVerified: true,
     isSetupComplete: Boolean(pharmacy && pharmacy.id),
     medicines,
     batches,
@@ -530,11 +519,7 @@ export const PharmacyProvider = ({ children }) => {
     fetchPharmacyData,
   };
 
-  return (
-    <PharmacyContext.Provider value={value}>
-      {children}
-    </PharmacyContext.Provider>
-  );
+  return <PharmacyContext.Provider value={value}>{children}</PharmacyContext.Provider>;
 };
 
 export const usePharmacy = () => {

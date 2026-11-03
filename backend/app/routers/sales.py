@@ -1,6 +1,13 @@
+"""
+MedGuard AI - Sales & POS Endpoints Router
+===========================================
+Exposes REST endpoints for listing past sales transactions and executing POS checkouts.
+"""
+
 from typing import List
 from fastapi import APIRouter, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
+
 from backend.app.database import get_db
 from backend.app.models.pharmacy import Pharmacy
 from backend.app.models.user import User
@@ -11,17 +18,23 @@ from backend.app.dependencies import get_current_user, get_current_pharmacy
 
 router = APIRouter(prefix="/api/sales", tags=["Sales & POS"])
 
+
 @router.get("")
 def list_sales(
     pharmacy: Pharmacy = Depends(get_current_pharmacy),
     db: Session = Depends(get_db),
 ):
-    sales = db.query(Sale).filter(Sale.pharmacy_id == pharmacy.id).order_by(Sale.created_at.desc()).all()
+    """Retrieve all past sales transactions for the authenticated pharmacy, ordered by newest first."""
+    sales = (
+        db.query(Sale)
+        .filter(Sale.pharmacy_id == pharmacy.id)
+        .order_by(Sale.created_at.desc())
+        .all()
+    )
     results = []
     for s in sales:
-        items = []
-        for it in s.items:
-            items.append({
+        items = [
+            {
                 "id": it.id,
                 "medicine_id": it.medicine_id,
                 "batch_id": it.batch_id,
@@ -32,7 +45,9 @@ def list_sales(
                 "total_price": it.total_price,
                 "medicine_name": it.medicine.name if it.medicine else "Medicine",
                 "batch_number": it.batch.batch_number if it.batch else "N/A",
-            })
+            }
+            for it in s.items
+        ]
         results.append({
             "id": s.id,
             "pharmacy_id": s.pharmacy_id,
@@ -56,6 +71,7 @@ def list_sales(
         })
     return results
 
+
 @router.post("/checkout", response_model=SaleCheckoutResponse, status_code=status.HTTP_201_CREATED)
 def post_checkout(
     req: SaleCheckoutRequest,
@@ -64,4 +80,9 @@ def post_checkout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """
+    Process Point of Sale (POS) checkout.
+    Deducts stock, records sale items, logs ledger movements, generates invoice PDF,
+    and optionally sends email receipt to customer.
+    """
     return checkout_sale(db, pharmacy, current_user, req, background_tasks)

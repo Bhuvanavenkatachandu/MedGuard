@@ -1,3 +1,10 @@
+"""
+MedGuard AI - Authentication Service
+=====================================
+Handles user registration, credential verification with bcrypt, JWT token generation,
+and session validation.
+"""
+
 from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -6,7 +13,14 @@ from backend.app.models.pharmacy import Pharmacy
 from backend.app.schemas.auth import UserRegisterRequest, UserLoginRequest, UserOut, TokenResponse
 from backend.app.dependencies import hash_password, verify_password, create_access_token
 
+
 def register_user(db: Session, req: UserRegisterRequest) -> TokenResponse:
+    """
+    Registers a new pharmacist user account.
+    
+    Accepts flexible naming conventions (fullName/name, mobileNumber/phone)
+    to support seamless integration with different client payloads.
+    """
     existing_user = db.query(User).filter(User.email == req.email.lower().strip()).first()
     if existing_user:
         raise HTTPException(
@@ -51,7 +65,12 @@ def register_user(db: Session, req: UserRegisterRequest) -> TokenResponse:
     )
     return TokenResponse(access_token=access_token, user=user_out)
 
+
 def login_user(db: Session, req: UserLoginRequest) -> TokenResponse:
+    """
+    Validates user credentials and issues a signed JWT access token.
+    Resolves the user's pharmacy_id if already registered.
+    """
     user = db.query(User).filter(User.email == req.email.lower().strip()).first()
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(
@@ -81,7 +100,9 @@ def login_user(db: Session, req: UserLoginRequest) -> TokenResponse:
     )
     return TokenResponse(access_token=access_token, user=user_out)
 
+
 def get_user_out(db: Session, user: User) -> UserOut:
+    """Builds a UserOut schema representation including linked pharmacy ID."""
     pharmacy = db.query(Pharmacy).filter(Pharmacy.owner_user_id == user.id).first()
     return UserOut(
         id=user.id,
@@ -94,7 +115,9 @@ def get_user_out(db: Session, user: User) -> UserOut:
         pharmacy_id=pharmacy.id if pharmacy else None,
     )
 
+
 def refresh_token(db: Session, user: User) -> TokenResponse:
+    """Issues a refreshed JWT token for the currently authenticated user."""
     pharmacy = db.query(Pharmacy).filter(Pharmacy.owner_user_id == user.id).first()
     pharmacy_id = pharmacy.id if pharmacy else None
     access_token = create_access_token(data={"sub": user.id, "email": user.email})
