@@ -1,29 +1,61 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class AIScanRequest(BaseModel):
     image_base64: Optional[str] = None
     image_url: Optional[str] = None
     pharmacy_id: Optional[str] = None
 
+class BoundingBox(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+class OCRRegion(BaseModel):
+    text: str
+    confidence: float
+    box: BoundingBox
+
+class ProcessingMetadata(BaseModel):
+    ocr_used: bool = True
+    ocr_confidence: float = 0.0
+    validation: str = "uncertain"  # "trusted" | "uncertain"
+    ai_fallback_used: bool = False
+    reason: List[str] = Field(default_factory=list)
+
 class ExtractedMedicineData(BaseModel):
-    medicine_name: str = ""
-    generic_name: str = ""
-    brand: str = ""
-    strength: str = ""
-    manufacturer: str = ""
-    batch_number: str = ""
-    manufacturing_date: str = ""
-    expiry_date: str = ""
-    pieces_per_strip: int = 10
-    unit_of_measure: str = "tablet"
+    medicine_name: Optional[str] = None
+    generic_name: Optional[str] = None
+    brand: Optional[str] = None
+    strength: Optional[str] = None
+    manufacturer: Optional[str] = None
+    batch_number: Optional[str] = None
+    manufacturing_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    quantity: Optional[int] = 10
+    pieces_per_strip: Optional[int] = 10
+    unit_of_measure: Optional[str] = "tablet"
     price_per_strip: Optional[float] = 50.0
 
 class AIScanResponse(BaseModel):
-    success: bool
-    confidence: float
-    extracted_data: Dict[str, Any]
-    needs_manual_verification: bool
-    issues: List[str] = []
+    # Standard Hybrid Unified Fields
+    medicine_name: Optional[str] = None
+    strength: Optional[str] = None
+    batch_number: Optional[str] = None
+    manufacturing_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    quantity: Optional[int] = 10
+    source: str = "tesseract"  # "tesseract" | "gemma" | "hybrid"
+    confidence: float = 0.0
+    validation_status: str = "trusted"  # "trusted" | "ai_validated" | "uncertain"
+    processing: ProcessingMetadata
+    bounding_boxes: List[OCRRegion] = Field(default_factory=list)
+
+    # Additional metadata & backward compatibility for frontend integration
+    success: bool = True
+    extracted_data: Dict[str, Any] = Field(default_factory=dict)
+    needs_manual_verification: bool = False
+    issues: List[str] = Field(default_factory=list)
     scan_id: Optional[str] = None
     warning: Optional[str] = None

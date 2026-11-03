@@ -8,7 +8,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 # Ensure TEST DATABASE URL is set BEFORE database.py or main.py are imported
-TEST_DB_URL = os.getenv("TEST_DATABASE_URL", "postgresql://localhost:5432/medguard_test")
+TEST_DB_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
 import pytest

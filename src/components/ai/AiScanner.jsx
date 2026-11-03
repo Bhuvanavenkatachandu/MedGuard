@@ -8,14 +8,14 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   RefreshCw, 
-  ArrowRight, 
   ShieldAlert,
-  Info,
-  Eye,
   FileCheck,
-  Calendar,
+  Zap,
+  Cpu,
   Layers,
-  HelpCircle
+  ChevronDown,
+  ChevronUp,
+  Crosshair
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { formatMedicineDate } from '../../utils/dateFormatter';
@@ -27,9 +27,10 @@ export const AiScanner = ({ onProceedToAddStock }) => {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageBase64, setImageBase64] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analyzingStatus, setAnalyzingStatus] = useState('Analyzing medicine packaging...');
+  const [analyzingStatus, setAnalyzingStatus] = useState('Step 1/3: Running Tesseract OCR & detecting text regions...');
   const [scanResult, setScanResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [showBoundingBoxes, setShowBoundingBoxes] = useState(false);
 
   // Editable fields verified by pharmacist
   const [verifiedData, setVerifiedData] = useState({
@@ -45,17 +46,17 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     price_per_strip: 50,
   });
 
-  // Cycle animated scanning steps during AI analysis (Section 26)
+  // Cycle animated scanning steps matching the hybrid pipeline
   useEffect(() => {
     let timer1, timer2;
     if (analyzing) {
-      setAnalyzingStatus('Analyzing medicine packaging...');
+      setAnalyzingStatus('Step 1/3: Running Tesseract OCR & detecting text regions...');
       timer1 = setTimeout(() => {
-        setAnalyzingStatus('Reading medicine name, salt & batch...');
-      }, 1400);
+        setAnalyzingStatus('Step 2/3: Validating field confidences, dates & batch syntax...');
+      }, 1300);
       timer2 = setTimeout(() => {
-        setAnalyzingStatus('Preparing inventory & expiry details...');
-      }, 2800);
+        setAnalyzingStatus('Step 3/3: Evaluating trusted gate / recovering with Gemma Vision...');
+      }, 2700);
     }
     return () => {
       clearTimeout(timer1);
@@ -84,7 +85,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     reader.readAsDataURL(file);
   };
 
-  // Run AI Analysis via backend Gemma 4 Vision API endpoint
+  // Run Hybrid Analysis
   const handleRunAiScan = async () => {
     if (!imageBase64) {
       setErrorMessage('Please upload or capture a photo of a medicine strip/packaging first.');
@@ -98,10 +99,19 @@ export const AiScanner = ({ onProceedToAddStock }) => {
       const data = await aiApi.scanMedicine(imageBase64);
       processScanOutput(data);
     } catch (err) {
-      console.warn('Backend AI scanner notice:', err);
+      console.warn('Hybrid scanner notice:', err);
       processScanOutput({
         success: false,
         confidence: 30,
+        source: 'manual_fallback',
+        validation_status: 'uncertain',
+        processing: {
+          ocr_used: true,
+          ocr_confidence: 0,
+          validation: 'uncertain',
+          ai_fallback_used: false,
+          reason: [err.response?.data?.detail || err.message || 'Image clarity requires manual pharmacist entry.'],
+        },
         needs_manual_verification: true,
         extracted_data: {
           medicine_name: '',
@@ -123,17 +133,17 @@ export const AiScanner = ({ onProceedToAddStock }) => {
 
   const processScanOutput = (data) => {
     setScanResult(data);
-    const ext = data.extracted_data || {};
+    const ext = data.extracted_data || data || {};
     setVerifiedData({
-      medicine_name: ext.medicine_name || '',
+      medicine_name: ext.medicine_name || data.medicine_name || '',
       generic_name: ext.generic_name || '',
       brand: ext.brand || '',
-      strength: ext.strength || '',
+      strength: ext.strength || data.strength || '',
       manufacturer: ext.manufacturer || '',
-      batch_number: ext.batch_number || '',
-      manufacturing_date: ext.manufacturing_date || '',
-      expiry_date: ext.expiry_date || '',
-      pieces_per_strip: ext.pieces_per_strip || 10,
+      batch_number: ext.batch_number || data.batch_number || '',
+      manufacturing_date: ext.manufacturing_date || data.manufacturing_date || '',
+      expiry_date: ext.expiry_date || data.expiry_date || '',
+      pieces_per_strip: ext.pieces_per_strip || data.quantity || 10,
       price_per_strip: ext.price_per_strip || 50,
     });
   };
@@ -144,23 +154,27 @@ export const AiScanner = ({ onProceedToAddStock }) => {
     }
   };
 
+  const isTrustedPath = scanResult?.validation_status === 'trusted' || scanResult?.source === 'tesseract';
+  const isAiFallback = scanResult?.processing?.ai_fallback_used || scanResult?.source === 'gemma';
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="p-1.5 rounded-lg bg-blue-100 text-primary font-bold">
             <Camera className="w-5 h-5" />
           </span>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-            AI Medicine Packaging Scanner
+            Hybrid Medicine Packaging Scanner
           </h1>
-          <span className="bg-gradient-to-r from-primary to-ai text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-            Gemma 4 Vision
+          <span className="bg-gradient-to-r from-emerald-600 to-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+            <Zap className="w-3 h-3" />
+            Tesseract OCR + Gemma 4 Vision
           </span>
         </div>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Upload medicine strips or packaging. Google Gemma 4 Vision automatically extracts brand name, active salt, batch number, and expiry date.
+          High-efficiency hybrid pipeline: executes fast local OCR first, validates field confidence & dates, and routes to Gemma 4 Vision only when needed.
         </p>
       </div>
 
@@ -178,7 +192,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-card space-y-4">
             <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center justify-between">
               <span>Packaging Capture</span>
-              <span className="text-[10px] text-slate-400 font-normal">Foil, Box, or Vial</span>
+              <span className="text-[10px] text-slate-400 font-normal">Foil Strip, Box, or Vial</span>
             </h2>
 
             {/* Dropzone / Preview Area */}
@@ -224,7 +238,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
               )}
             </div>
 
-            {/* AI Scanning Status or Button */}
+            {/* Pipeline Scanning Status or Button */}
             {analyzing ? (
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 text-center space-y-2">
                 <div className="flex items-center justify-center gap-2 text-xs font-bold text-primary">
@@ -232,7 +246,7 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                   <span>{analyzingStatus}</span>
                 </div>
                 <div className="w-full bg-blue-200/60 rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-gradient-to-r from-primary to-ai h-full animate-pulse rounded-full w-3/4" />
+                  <div className="bg-gradient-to-r from-emerald-500 via-primary to-ai h-full animate-pulse rounded-full w-4/5" />
                 </div>
               </div>
             ) : (
@@ -242,24 +256,57 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                 className="w-full"
                 disabled={!imagePreview || analyzing}
                 onClick={handleRunAiScan}
-                leftIcon={<Sparkles className="w-4 h-4" />}
+                leftIcon={<Zap className="w-4 h-4 text-amber-300" />}
               >
-                Analyze Packaging with Gemma 4
+                Run Hybrid Scan (OCR First)
               </Button>
+            )}
+
+            {/* Bounding Boxes Toggle (if detected) */}
+            {scanResult?.bounding_boxes && scanResult.bounding_boxes.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
+                  className="w-full text-xs font-semibold text-slate-600 hover:text-primary flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-blue-50/50 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Crosshair className="w-3.5 h-3.5 text-primary" />
+                    <span>Detected Text Regions ({scanResult.bounding_boxes.length})</span>
+                  </span>
+                  {showBoundingBoxes ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {showBoundingBoxes && (
+                  <div className="mt-2 p-2.5 max-h-48 overflow-y-auto space-y-1.5 bg-slate-900 rounded-xl text-[11px] font-mono text-slate-200">
+                    {scanResult.bounding_boxes.map((box, idx) => (
+                      <div key={idx} className="flex items-center justify-between border-b border-slate-800 pb-1">
+                        <span className="truncate max-w-[140px] text-amber-400 font-bold">"{box.text}"</span>
+                        <div className="flex items-center gap-2 text-slate-400 text-[10px]">
+                          <span className={box.confidence >= 80 ? 'text-emerald-400' : 'text-amber-400'}>
+                            {box.confidence}%
+                          </span>
+                          <span>[{box.box?.x},{box.box?.y},{box.box?.width}x{box.box?.height}]</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* Right Column: AI Extraction & Pharmacist Verification Form (7 cols) */}
-        <div className="lg:col-span-7">
+        {/* Right Column: Extraction & Pharmacist Verification Form (7 cols) */}
+        <div className="lg:col-span-7 space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-card space-y-5">
-            <div className="flex items-start sm:items-center justify-between pb-3.5 border-b border-slate-100 gap-3">
+            <div className="flex flex-wrap items-start sm:items-center justify-between pb-3.5 border-b border-slate-100 gap-3">
               <div>
                 <h2 className="text-sm sm:text-base font-bold text-slate-900">
                   Pharmacist Verification & Editing Form
                 </h2>
                 <p className="text-xs text-slate-500">
-                  AI output is never automatically saved without pharmacist confirmation.
+                  AI & OCR output is verified by the pharmacist before stock commitment.
                 </p>
               </div>
 
@@ -274,27 +321,60 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                   ) : (
                     <AlertTriangle className="w-3.5 h-3.5" />
                   )}
-                  <span>{scanResult.confidence}% AI Confidence</span>
+                  <span>{scanResult.confidence}% Confidence</span>
                 </div>
               )}
             </div>
 
-            {/* Diagnostic Alert Box */}
-            {scanResult?.issues && scanResult.issues.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-amber-600" />
-                  <span>Quality Diagnostic:</span>
+            {/* Hybrid Pipeline Explainability Decision Card */}
+            {scanResult && (
+              <div className={`rounded-xl p-3.5 border text-xs space-y-2 ${
+                isTrustedPath
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                  : 'bg-blue-50/70 border-blue-200 text-slate-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-bold flex items-center gap-1.5">
+                    {isTrustedPath ? (
+                      <>
+                        <Zap className="w-4 h-4 text-emerald-600" />
+                        <span>Path: Trusted Tesseract OCR (0 AI Calls Used)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Cpu className="w-4 h-4 text-primary" />
+                        <span>Path: Gemma 4 Vision Fallback (AI Validated)</span>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold bg-white/80 border border-slate-200">
+                    Status: {scanResult.validation_status}
+                  </span>
                 </div>
-                <ul className="list-disc list-inside text-[11px] text-amber-800 space-y-0.5">
-                  {scanResult.issues.map((issue, idx) => (
-                    <li key={idx}>{issue}</li>
-                  ))}
-                </ul>
+
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  {isTrustedPath
+                    ? 'All critical fields (Name, Strength, Batch, Expiry) passed confidence thresholds and structural domain validation. Processed immediately with zero AI API overhead.'
+                    : 'OCR encountered ambiguous text or low field confidence. Gemma 4 Vision inspected the packaging photo to visually recover and corroborate medicine attributes.'}
+                </p>
+
+                {/* Explain decision reasons */}
+                {scanResult.processing?.reason && scanResult.processing.reason.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-slate-200/60 space-y-1">
+                    <span className="font-bold text-[10px] text-slate-700 uppercase tracking-wider">
+                      Decision Triggers & Diagnostics:
+                    </span>
+                    <ul className="list-disc list-inside text-[11px] text-slate-700 space-y-0.5">
+                      {scanResult.processing.reason.map((reason, idx) => (
+                        <li key={idx}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Editable Fields (Section 27) */}
+            {/* Editable Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">Medicine Name *</label>
@@ -356,9 +436,10 @@ export const AiScanner = ({ onProceedToAddStock }) => {
                   Expiry Date * {verifiedData.expiry_date && <span className="text-primary font-normal">({formatMedicineDate(verifiedData.expiry_date)})</span>}
                 </label>
                 <input
-                  type="date"
+                  type="text"
                   value={verifiedData.expiry_date}
                   onChange={(e) => setVerifiedData({ ...verifiedData, expiry_date: e.target.value })}
+                  placeholder="MM/YYYY or YYYY-MM-DD"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary font-mono font-semibold"
                 />
               </div>
