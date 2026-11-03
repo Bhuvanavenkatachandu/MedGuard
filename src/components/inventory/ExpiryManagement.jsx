@@ -8,8 +8,13 @@ import {
   Sliders, 
   ShieldCheck, 
   Calendar,
-  Layers
+  Layers,
+  AlertOctagon
 } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { StatusBadge } from '../ui/StatusBadge';
+import { formatMedicineDate } from '../../utils/dateFormatter';
+import { EmptyState } from '../ui/EmptyState';
 
 export const ExpiryManagement = ({ setActiveTab }) => {
   const { metrics, markBatchExpired, pharmacy, setPharmacy } = usePharmacy();
@@ -28,9 +33,13 @@ export const ExpiryManagement = ({ setActiveTab }) => {
     setShowSettings(false);
   };
 
-  const handleWriteOff = (batch) => {
+  const handleWriteOff = async (batch) => {
     if (confirm(`Are you sure you want to write off ${batch.total_pieces} pieces of expired batch ${batch.batch_number}? This will log an auditable 'expired_stock' stock movement.`)) {
-      markBatchExpired(batch.id);
+      try {
+        await markBatchExpired(batch.id);
+      } catch (err) {
+        alert(err.message || 'Failed to write off batch');
+      }
     }
   };
 
@@ -50,32 +59,33 @@ export const ExpiryManagement = ({ setActiveTab }) => {
             <span className="p-1.5 rounded-lg bg-amber-100 text-amber-700 font-bold">
               <Clock className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               FEFO & Expiry Management
             </h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             First-Expired, First-Out (FEFO) radar guarantees earlier expiring batches are dispensed before newer stock.
           </p>
         </div>
 
         {/* Threshold Config Button */}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setShowSettings(!showSettings)}
-          className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold py-2 px-3.5 rounded-xl flex items-center gap-2 transition-colors shadow-xs"
+          leftIcon={<Sliders className="w-3.5 h-3.5" />}
         >
-          <Sliders className="w-3.5 h-3.5 text-slate-500" />
-          <span>Near-Expiry Threshold: {thresholdDays} Days</span>
-        </button>
+          Near-Expiry Threshold: {thresholdDays} Days
+        </Button>
       </div>
 
       {/* Threshold Modal / Inline Configuration */}
       {showSettings && (
-        <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+        <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
           <div>
-            <h3 className="font-bold text-amber-900">Configure Near-Expiry Alert Window</h3>
-            <p className="text-amber-800 text-[11px] mt-0.5">
-              Medicines expiring within this number of days will be flagged for priority clearance under FEFO.
+            <h3 className="font-bold text-amber-900 text-sm">Configure Near-Expiry Alert Window</h3>
+            <p className="text-amber-800 text-xs mt-0.5">
+              Medicines expiring within this number of days will be flagged for priority clearance under FEFO rules.
             </p>
           </div>
 
@@ -86,133 +96,160 @@ export const ExpiryManagement = ({ setActiveTab }) => {
               max="365"
               value={thresholdDays}
               onChange={(e) => setThresholdDays(e.target.value)}
-              className="w-20 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-800 font-mono text-center"
+              className="w-20 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-800 font-mono text-center focus:outline-none focus:border-amber-500"
             />
             <span className="text-amber-900 font-semibold">days</span>
-            <button
+            <Button
+              variant="primary"
+              size="xs"
               type="submit"
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs"
+              className="bg-amber-600 hover:bg-amber-700"
             >
-              Save
-            </button>
+              Save Threshold
+            </Button>
           </form>
         </div>
       )}
 
-      {/* Tabs for Expiring Soon, Expired, Safe */}
-      <div className="flex border-b border-slate-200 gap-2">
-        <button
+      {/* Summary KPI Badges (Section 31) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div
           onClick={() => setActiveExpiryTab('expiring')}
-          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all ${
-            activeTab === 'expiring'
-              ? 'border-amber-500 text-amber-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          className={`bg-white rounded-2xl border p-5 shadow-card transition-all cursor-pointer ${
+            activeTab === 'expiring' ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200/90 hover:border-amber-300'
           }`}
         >
-          <Clock className="w-4 h-4" />
-          <span>Expiring Soon ({metrics.expiringSoonCount})</span>
-        </button>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Expiring Soon</span>
+            <Clock className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-2xl font-extrabold text-amber-600 font-mono">
+            {metrics.expiringSoonCount} <span className="text-xs font-normal text-slate-500">batches</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Expiring within {thresholdDays} days</p>
+        </div>
 
-        <button
+        <div
           onClick={() => setActiveExpiryTab('expired')}
-          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all ${
-            activeTab === 'expired'
-              ? 'border-rose-500 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          className={`bg-white rounded-2xl border p-5 shadow-card transition-all cursor-pointer ${
+            activeTab === 'expired' ? 'border-rose-400 ring-2 ring-rose-400/20' : 'border-slate-200/90 hover:border-rose-300'
           }`}
         >
-          <AlertTriangle className="w-4 h-4" />
-          <span>Expired Stock ({metrics.expiredCount})</span>
-        </button>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Expired Batches</span>
+            <AlertOctagon className="w-4 h-4 text-rose-600" />
+          </div>
+          <div className="text-2xl font-extrabold text-rose-600 font-mono">
+            {metrics.expiredCount} <span className="text-xs font-normal text-slate-500">batches</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Requires quarantine & write-off</p>
+        </div>
 
-        <button
+        <div
           onClick={() => setActiveExpiryTab('safe')}
-          className={`pb-3 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition-all ${
-            activeTab === 'safe'
-              ? 'border-emerald-500 text-emerald-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          className={`bg-white rounded-2xl border p-5 shadow-card transition-all cursor-pointer ${
+            activeTab === 'safe' ? 'border-emerald-400 ring-2 ring-emerald-400/20' : 'border-slate-200/90 hover:border-emerald-300'
           }`}
         >
-          <CheckCircle2 className="w-4 h-4" />
-          <span>Safe Batches ({metrics.safeBatches.length})</span>
-        </button>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Safe Shelf Life</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-2xl font-extrabold text-emerald-600 font-mono">
+            {metrics.safeBatches?.length || 0} <span className="text-xs font-normal text-slate-500">batches</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Sufficient shelf life remaining</p>
+        </div>
       </div>
 
       {/* Batches Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {currentList.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-xs">
-            No batches found in this category.
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 capitalize">
+              {activeTab === 'expiring' ? `Batches Expiring Within ${thresholdDays} Days` : activeTab === 'expired' ? 'Expired Batches (Do Not Dispense)' : 'Safe Batches'}
+            </h2>
+            <p className="text-xs text-slate-500">Dispensing priority strictly follows First-Expired, First-Out (FEFO)</p>
           </div>
+          <span className="text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg">
+            {currentList.length} Batch(es)
+          </span>
+        </div>
+
+        {currentList.length === 0 ? (
+          <EmptyState
+            icon={Clock}
+            title={activeTab === 'expired' ? 'No Expired Medicines' : activeTab === 'expiring' ? 'No Near-Expiry Batches' : 'No Safe Batches'}
+            description={
+              activeTab === 'expired'
+                ? 'Your inventory is 100% compliant with zero expired medicine batches.'
+                : activeTab === 'expiring'
+                ? `No medicine batches are approaching expiry within your ${thresholdDays}-day alert window.`
+                : 'No registered safe batches currently recorded.'
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4 font-semibold">Medicine</th>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-4 font-semibold">Medicine Name</th>
                   <th className="py-3 px-4 font-semibold">Batch Number</th>
                   <th className="py-3 px-4 font-semibold">Expiry Date</th>
-                  <th className="py-3 px-4 font-semibold text-center">Remaining Stock</th>
-                  <th className="py-3 px-4 font-semibold text-right">Strip Price</th>
-                  <th className="py-3 px-4 font-semibold text-center">FEFO Status</th>
-                  {activeTab === 'expired' && (
-                    <th className="py-3 px-4 font-semibold text-center">Write Off</th>
-                  )}
+                  <th className="py-3 px-4 font-semibold">Remaining Stock</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {currentList.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={batch.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900">{batch.medicine_name}</div>
-                      <div className="text-[11px] text-slate-400">{batch.generic_name || batch.strength}</div>
-                    </td>
-
-                    <td className="py-3.5 px-4 font-mono font-medium text-slate-700">
-                      {batch.batch_number}
+                      <div className="font-extrabold text-slate-900 text-sm">{batch.medicine_name}</div>
+                      <div className="text-[11px] text-slate-500">{batch.medicine?.generic_name || 'N/A'}</div>
                     </td>
 
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
-                      {batch.expiry_date}
+                      {batch.batch_number}
                     </td>
 
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="font-extrabold text-slate-900">{batch.total_pieces}</span>
-                      <span className="text-slate-400 text-[10px]"> pieces ({batch.available_strips} strips, {batch.loose_pieces} loose)</span>
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-slate-900">{formatMedicineDate(batch.expiry_date)}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">{batch.expiry_date}</div>
                     </td>
 
-                    <td className="py-3.5 px-4 font-bold text-slate-900 text-right">
-                      ₹{Number(batch.price_per_strip).toFixed(2)}
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-slate-900 font-mono text-sm">{batch.total_pieces} pcs</div>
+                      <div className="text-[10px] text-slate-500 font-mono">₹{Number(batch.price_per_piece || 0).toFixed(2)}/pc</div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <StatusBadge 
+                        status={activeTab === 'expired' ? 'expired' : activeTab === 'expiring' ? 'expiring_soon' : 'safe'}
+                        size="xs"
+                      />
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
                       {activeTab === 'expired' ? (
-                        <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-rose-200">
-                          DO NOT DISPENSE
-                        </span>
-                      ) : activeTab === 'expiring' ? (
-                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">
-                          FEFO PRIORITY #1
-                        </span>
+                        <Button
+                          variant="dangerOutline"
+                          size="xs"
+                          onClick={() => handleWriteOff(batch)}
+                          leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                        >
+                          Write Off Expired
+                        </Button>
                       ) : (
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
-                          SAFE STOCK
-                        </span>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => setActiveTab('pos')}
+                        >
+                          Dispense in POS
+                        </Button>
                       )}
                     </td>
-
-                    {activeTab === 'expired' && (
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => handleWriteOff(batch)}
-                          disabled={batch.total_pieces === 0}
-                          className="bg-rose-50 hover:bg-rose-100 disabled:opacity-30 text-rose-700 font-bold px-2.5 py-1 rounded-lg text-[11px] flex items-center justify-center gap-1 mx-auto transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Write Off</span>
-                        </button>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>

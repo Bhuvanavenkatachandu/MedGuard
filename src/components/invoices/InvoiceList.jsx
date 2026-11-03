@@ -12,6 +12,8 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { generateInvoicePdf } from '../../utils/pdfGenerator';
+import { Button } from '../ui/Button';
+import { EmptyState } from '../ui/EmptyState';
 
 export const InvoiceList = () => {
   const { invoices, sales, pharmacy, resendInvoiceEmail } = usePharmacy();
@@ -75,120 +77,124 @@ export const InvoiceList = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 font-bold">
+            <span className="p-1.5 rounded-lg bg-blue-100 text-primary font-bold">
               <FileText className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               Invoices & Billing History
             </h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Archived sales invoices with PDF retrieval and automated email tracking.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Archived sales invoices with instant PDF retrieval and automated email tracking.
           </p>
         </div>
 
-        <div className="text-xs font-semibold bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs">
-          Total Invoices: <strong className="text-blue-600">{invoices.length}</strong>
+        <div className="text-xs font-semibold bg-white border border-slate-200/90 px-3 py-1.5 rounded-xl shadow-xs">
+          Total Invoices: <strong className="text-primary">{invoices.length}</strong>
         </div>
       </div>
 
       {/* Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-card">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by invoice number, customer name, phone number, or email..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-medium"
+            placeholder="Search by invoice number, patient name, phone number, or email..."
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary font-medium"
           />
         </div>
       </div>
 
-      {/* Invoices Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Invoice Table */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-card overflow-hidden">
         {filteredInvoices.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-xs">
-            No matching invoices found.
-          </div>
+          <EmptyState
+            icon={FileText}
+            title="No Invoices Found"
+            description={
+              searchTerm
+                ? `No invoices match "${searchTerm}".`
+                : 'No invoices created yet. Completed POS transactions will automatically archive here.'
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase tracking-wider text-[10px]">
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 uppercase tracking-wider text-[10px]">
                   <th className="py-3 px-4 font-semibold">Invoice #</th>
-                  <th className="py-3 px-4 font-semibold">Date & Time</th>
                   <th className="py-3 px-4 font-semibold">Customer Details</th>
-                  <th className="py-3 px-4 font-semibold text-right">Amount</th>
+                  <th className="py-3 px-4 font-semibold">Date & Time</th>
+                  <th className="py-3 px-4 font-semibold text-right">Invoice Amount</th>
                   <th className="py-3 px-4 font-semibold text-center">Email Status</th>
                   <th className="py-3 px-4 font-semibold text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredInvoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
                       {inv.invoice_number}
                     </td>
 
-                    <td className="py-3.5 px-4 text-slate-500">
-                      {new Date(inv.created_at).toLocaleDateString('en-IN')}{' '}
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(inv.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-900">{inv.customer_name}</div>
+                      <div className="text-[11px] text-slate-500 font-mono">{inv.customer_phone}</div>
+                      {inv.customer_email && (
+                        <div className="text-[10px] text-slate-400">{inv.customer_email}</div>
+                      )}
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-800">{inv.customer_name}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {inv.customer_phone} {inv.customer_email && `• ${inv.customer_email}`}
+                    <td className="py-3.5 px-4 text-slate-600">
+                      <div>{new Date(inv.created_at).toLocaleDateString('en-IN')}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        {new Date(inv.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 font-bold text-slate-900 text-right">
+                    <td className="py-3.5 px-4 font-extrabold text-slate-900 text-right font-mono text-sm">
                       ₹{Number(inv.total_amount).toFixed(2)}
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
-                      {inv.status === 'emailed' ? (
-                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Emailed</span>
-                        </span>
-                      ) : inv.status === 'email_failed' ? (
-                        <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3 text-rose-600" />
-                          <span>Email Failed</span>
+                      {inv.customer_email ? (
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
+                          inv.email_status === 'sent'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                          <Mail className="w-3 h-3" />
+                          <span>{inv.email_status === 'sent' ? 'Delivered' : 'Pending'}</span>
                         </span>
                       ) : (
-                        <span className="bg-slate-100 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full">
-                          Generated
-                        </span>
+                        <span className="text-[10px] text-slate-400 italic">No email</span>
                       )}
                     </td>
 
                     <td className="py-3.5 px-4 text-center">
                       <div className="inline-flex items-center gap-1.5">
-                        <button
+                        <Button
+                          variant="outline"
+                          size="xs"
                           onClick={() => handleDownload(inv)}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1 rounded-lg text-[11px] flex items-center gap-1 transition-colors"
-                          title="Download PDF"
+                          leftIcon={<Download className="w-3.5 h-3.5 text-primary" />}
                         >
-                          <Download className="w-3 h-3 text-blue-600" />
-                          <span>PDF</span>
-                        </button>
+                          PDF
+                        </Button>
 
                         {inv.customer_email && (
-                          <button
-                            onClick={() => handleResend(inv)}
+                          <Button
+                            variant="ghost"
+                            size="xs"
                             disabled={resendingId === inv.id}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2 py-1 rounded-lg text-[11px] flex items-center gap-1 transition-colors"
-                            title="Resend email to customer"
+                            onClick={() => handleResend(inv)}
+                            leftIcon={<Mail className="w-3.5 h-3.5" />}
                           >
-                            <Mail className={`w-3 h-3 ${resendingId === inv.id ? 'animate-spin' : ''}`} />
-                            <span>Resend</span>
-                          </button>
+                            {resendingId === inv.id ? 'Sending...' : 'Email'}
+                          </Button>
                         )}
                       </div>
                     </td>

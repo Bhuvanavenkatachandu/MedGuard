@@ -11,6 +11,8 @@ import {
   Layers,
   ArrowRight
 } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { formatMedicineDate } from '../../utils/dateFormatter';
 
 export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
   const { suppliers, addStock, medicines } = usePharmacy();
@@ -56,7 +58,6 @@ export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
   const totalPieces = (parseInt(quantityStrips, 10) || 0) * (parseInt(piecesPerStrip, 10) || 10);
   const calculatedPricePerPiece = (parseFloat(pricePerStrip) || 0) / (parseInt(piecesPerStrip, 10) || 10);
 
-  // When medicineName is typed, check if it's already an existing medicine to auto-populate generic, brand, strength
   const handleMedicineSelect = (name) => {
     setMedicineName(name);
     const existing = medicines.find(m => m.name.toLowerCase() === name.toLowerCase());
@@ -101,263 +102,240 @@ export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
         min_stock_pieces: parseInt(minStockPieces, 10) || 20,
       });
 
-      setSuccessMsg(`Successfully added ${quantityStrips} strip(s) (${totalPieces} pieces) of ${medicineName} (Batch: ${batchNumber})!`);
-      
-      // Reset form fields
-      setBatchNumber('');
-      setQuantityStrips('');
-      setPricePerStrip('');
-
-      if (onDone) {
-        setTimeout(onDone, 1200);
-      }
+      setSuccessMsg(`Successfully added ${quantityStrips} strip(s) of ${medicineName} (${totalPieces} pieces).`);
+      setTimeout(() => {
+        if (onDone) onDone();
+      }, 1200);
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to add stock.');
+      setErrorMsg(err.message || 'Failed to add stock');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Top Banner with Mode Selector */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 font-bold">
+            <span className="p-1.5 rounded-lg bg-blue-100 text-primary font-bold">
               <PackagePlus className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Inward Stock Entry
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+              Inward Stock Addition
             </h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Register new medicine batches, define strip sizing, pricing, and audit inward movements.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Register new medicine batches or replenish existing stock with FEFO date tracking.
           </p>
         </div>
 
-        <button
-          onClick={onGoToScanner}
-          className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition-all shadow-sm"
-        >
-          <Camera className="w-4 h-4 text-blue-400" />
-          <span>Use Gemma 4 AI Scan</span>
-        </button>
+        {onGoToScanner && (
+          <Button
+            variant="ai"
+            size="sm"
+            onClick={onGoToScanner}
+            leftIcon={<Camera className="w-4 h-4" />}
+          >
+            Auto-fill with AI Scanner
+          </Button>
+        )}
       </div>
 
+      {initialData && (
+        <div className="bg-blue-50 border border-blue-200/90 text-primary p-3.5 rounded-2xl flex items-center gap-2.5 text-xs">
+          <Sparkles className="w-4 h-4 text-ai flex-shrink-0" />
+          <span>Fields prefilled from Gemma 4 Vision AI scan. Please enter inward quantity and verify supplier.</span>
+        </div>
+      )}
+
       {errorMsg && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-xl flex items-center gap-2">
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl flex items-center gap-2 text-xs">
           <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       {successMsg && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-3.5 rounded-xl flex items-center gap-2">
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-2xl flex items-center gap-2 text-xs">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Section 1: Medicine Information */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100">
-            1. Medicine Master Information
+      {/* Main Form (Section 25) */}
+      <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-8 shadow-card space-y-6">
+        {/* Step 1: Medicine Information */}
+        <div className="space-y-4">
+          <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">1</span>
+            <span>Medicine Specification & Formulation</span>
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="sm:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">
-                Medicine Commercial Name *
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Medicine Trade / Brand Name *</label>
               <input
                 type="text"
                 required
                 value={medicineName}
                 onChange={(e) => handleMedicineSelect(e.target.value)}
-                placeholder="e.g. Dolo 650, Augmentin 625 Duo"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:border-blue-500"
+                placeholder="e.g. Dolo 650, Augmentin 625 Duo, Azithral"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Strength / Dosage
-              </label>
-              <input
-                type="text"
-                value={strength}
-                onChange={(e) => setStrength(e.target.value)}
-                placeholder="e.g. 650mg, 500mg, 10ml"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">
-                Generic Name / Active Ingredients
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Generic Name / Salt</label>
               <input
                 type="text"
                 value={genericName}
                 onChange={(e) => setGenericName(e.target.value)}
-                placeholder="e.g. Paracetamol, Amoxicillin + Clavulanic Acid"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                placeholder="e.g. Paracetamol IP"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Category
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-              >
-                <option value="General">General</option>
-                <option value="Antipyretic / Analgesic">Antipyretic / Analgesic</option>
-                <option value="Antibiotic">Antibiotic</option>
-                <option value="Antacid / PPI">Antacid / PPI</option>
-                <option value="Antihistamine / Allergy">Antihistamine / Allergy</option>
-                <option value="Cardiovascular">Cardiovascular</option>
-                <option value="Antidiabetic">Antidiabetic</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Brand / Marketer
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Strength / Dosage</label>
               <input
                 type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="e.g. Micro Labs, GSK"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                value={strength}
+                onChange={(e) => setStrength(e.target.value)}
+                placeholder="e.g. 650mg, 500mg/125mg"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary font-mono"
               />
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">
-                Manufacturer
-              </label>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Manufacturer</label>
               <input
                 type="text"
                 value={manufacturer}
                 onChange={(e) => setManufacturer(e.target.value)}
-                placeholder="e.g. Micro Labs Ltd, GlaxoSmithKline"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                placeholder="e.g. Micro Labs, GSK, Cipla"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
               />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
+              >
+                <option value="General">General Medicine</option>
+                <option value="Antibiotic">Antibiotic</option>
+                <option value="Antipyretic / Analgesic">Antipyretic / Pain Relief</option>
+                <option value="Cardiology">Cardiology</option>
+                <option value="Diabetology">Diabetology</option>
+                <option value="Respiratory">Respiratory</option>
+                <option value="Vitamins & Supplements">Vitamins & Supplements</option>
+              </select>
             </div>
           </div>
         </div>
 
-        {/* Section 2: Batch, Supplier & Expiry */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center justify-between">
-            <span>2. Batch & Supplier Association</span>
-            <span className="text-[10px] text-blue-600 font-normal">Supports Multiple Batches</span>
+        {/* Step 2: Batch & Regulatory Dates */}
+        <div className="space-y-4 pt-2">
+          <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">2</span>
+            <span>Batch & Expiry Controls (FEFO)</span>
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Batch Number *
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Batch Number *</label>
               <input
                 type="text"
                 required
                 value={batchNumber}
                 onChange={(e) => setBatchNumber(e.target.value)}
-                placeholder="e.g. DL-8841"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-blue-500"
+                placeholder="e.g. DL-8841-B"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Supplier
-              </label>
-              <select
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-              >
-                <option value="">-- No Supplier Linked --</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Manufacturing Date
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Manufacturing Date</label>
               <input
                 type="date"
                 value={mfgDate}
                 onChange={(e) => setMfgDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-mono focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                Expiry Date *
+                Expiry Date * {expiryDate && <span className="text-emerald-700 font-normal">({formatMedicineDate(expiryDate)})</span>}
               </label>
               <input
                 type="date"
                 required
                 value={expiryDate}
                 onChange={(e) => setExpiryDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-bold text-rose-600"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
               />
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block font-semibold text-slate-700 mb-1">Procurement Supplier</label>
+              <select
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
+              >
+                <option value="">Direct Distributor / Cash Purchase</option>
+                {suppliers.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.contact_person || 'Distributor'} • {s.phone})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
 
-        {/* Section 3: Quantity & Sizing */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100">
-            3. Quantity, Strip Sizing & Pricing
+        {/* Step 3: Strip & Piece Configuration (Section 29) */}
+        <div className="space-y-4 pt-2">
+          <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-2">
+            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">3</span>
+            <span>Strip & Piece Inventory Configuration</span>
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Pieces Per Strip *
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Pieces Per Strip *</label>
               <input
                 type="number"
                 min="1"
                 required
                 value={piecesPerStrip}
-                onChange={(e) => setPiecesPerStrip(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-semibold"
+                onChange={(e) => setPiecesPerStrip(parseInt(e.target.value, 10) || 10)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
               />
+              <span className="text-[10px] text-slate-400 mt-1 block">Tablets or capsules per blister strip</span>
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Quantity (Full Strips) *
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Quantity (Full Strips) *</label>
               <input
                 type="number"
                 min="1"
                 required
                 value={quantityStrips}
                 onChange={(e) => setQuantityStrips(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-bold"
+                placeholder="e.g. 20 strips"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
               />
+              <span className="text-[10px] text-slate-400 mt-1 block">Number of sealed whole strips</span>
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Price Per Strip (₹) *
-              </label>
+              <label className="block font-semibold text-slate-700 mb-1">Retail Price Per Strip (₹) *</label>
               <input
                 type="number"
                 step="0.01"
@@ -365,59 +343,56 @@ export const AddStock = ({ initialData, onDone, onGoToScanner }) => {
                 required
                 value={pricePerStrip}
                 onChange={(e) => setPricePerStrip(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-semibold"
+                placeholder="e.g. 45.00"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
               />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Min Stock Alert (Pieces)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={minStockPieces}
-                onChange={(e) => setMinStockPieces(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
-              />
+              <span className="text-[10px] text-slate-400 mt-1 block">Customer retail MRP per strip</span>
             </div>
           </div>
 
-          {/* Computed Summary Box */}
-          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Automatic Strip-to-Piece Conversion Live Box */}
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/90 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div>
-              <span className="text-slate-500 block">Total Pieces Added (Source of Truth):</span>
-              <span className="text-base font-extrabold text-blue-900 font-mono">
-                {totalPieces} pieces
-              </span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Pieces Added</span>
+              <div className="text-base font-black text-primary font-mono mt-0.5">{totalPieces} pcs</div>
             </div>
-
-            <div className="border-l border-blue-200 pl-4">
-              <span className="text-slate-500 block">Calculated Piece Price:</span>
-              <span className="text-base font-bold text-slate-800 font-mono">
-                ₹{calculatedPricePerPiece.toFixed(2)} / piece
-              </span>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Price Per Piece</span>
+              <div className="text-base font-bold text-slate-900 font-mono mt-0.5">₹{calculatedPricePerPiece.toFixed(2)}</div>
             </div>
-
-            <div className="border-l border-blue-200 pl-4">
-              <span className="text-slate-500 block">Total Batch Inward Value:</span>
-              <span className="text-base font-bold text-slate-800 font-mono">
-                ₹{((parseFloat(pricePerStrip) || 0) * (parseInt(quantityStrips, 10) || 0)).toFixed(2)}
-              </span>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Full Strips</span>
+              <div className="text-base font-bold text-slate-900 font-mono mt-0.5">{quantityStrips || 0} strips</div>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Batch Value</span>
+              <div className="text-base font-bold text-emerald-700 font-mono mt-0.5">
+                ₹{((parseInt(quantityStrips, 10) || 0) * (parseFloat(pricePerStrip) || 0)).toFixed(2)}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Submit Button */}
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-md shadow-blue-500/20"
+        {/* Submit */}
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <Button
+            variant="outline"
+            size="md"
+            type="button"
+            onClick={onDone}
           >
-            <span>{loading ? 'Adding Stock...' : 'Save Stock to Inventory'}</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+            Cancel
+          </Button>
+
+          <Button
+            variant="primary"
+            size="md"
+            type="submit"
+            isLoading={loading}
+            leftIcon={<PackagePlus className="w-4 h-4" />}
+          >
+            Confirm & Save to Pharmacy Inventory
+          </Button>
         </div>
       </form>
     </div>

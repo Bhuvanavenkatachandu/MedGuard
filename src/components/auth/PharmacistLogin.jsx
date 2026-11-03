@@ -9,8 +9,13 @@ import {
   Sparkles,
   KeyRound,
   CheckCircle2,
-  X
+  X,
+  ShieldCheck,
+  ChevronRight
 } from 'lucide-react';
+import { Logo } from '../ui/Logo';
+import { Button } from '../ui/Button';
+import { Modal } from '../ui/Modal';
 
 export const PharmacistLogin = () => {
   const navigate = useNavigate();
@@ -31,7 +36,6 @@ export const PharmacistLogin = () => {
   const [resending, setResending] = useState(false);
   const [resendStatus, setResendStatus] = useState(null);
 
-  // Check if routed with ?unverified=true
   useEffect(() => {
     if (searchParams.get('unverified') === 'true') {
       const emailParam = searchParams.get('email');
@@ -56,18 +60,12 @@ export const PharmacistLogin = () => {
     try {
       const result = await loginPharmacist({ email: email.trim(), password });
 
-      // If email is NOT verified:
-      // DO NOT open Pharmacy Setup.
-      // DO NOT open Dashboard.
-      // DO NOT create a verification page.
-      // Instead, remain on the existing Login page and show modal/message
       if (!result.isEmailVerified) {
         setUnverifiedEmail(result.email || email.trim());
         setShowUnverifiedModal(true);
         return;
       }
 
-      // If verified:
       if (!result.isSetupComplete) {
         navigate('/pharmacist/setup');
       } else {
@@ -99,296 +97,261 @@ export const PharmacistLogin = () => {
     }
   };
 
-  const handleForgotPasswordSubmit = async (e) => {
+  const handleForgotPassword = async (e) => {
     e.preventDefault();
-    if (!forgotEmail.trim()) {
-      setForgotError('Please enter your email address.');
+    if (!forgotEmail || !forgotEmail.includes('@')) {
+      setForgotError('Please enter a valid email address.');
       return;
     }
-
     setForgotLoading(true);
     setForgotError(null);
     setForgotSuccess(null);
-
     try {
-      setForgotSuccess(`Password reset instructions sent to ${forgotEmail}. Please check your inbox.`);
+      setForgotSuccess(`Password reset instructions have been sent to ${forgotEmail}.`);
     } catch (err) {
-      setForgotError(err.message || 'Failed to send reset email.');
+      setForgotError(err.message || 'Failed to send password reset email.');
     } finally {
       setForgotLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex w-14 h-14 rounded-2xl bg-blue-600 text-white items-center justify-center font-bold text-2xl shadow-xl shadow-blue-500/20 mb-3">
-          🛡️
-        </div>
-        <h1 className="text-2xl font-extrabold text-white tracking-tight">
-          Pharmacist Login
-        </h1>
-        <p className="mt-1 text-xs text-slate-400">
-          MedGuard AI • Secure Pharmacy Operating System
-        </p>
-      </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center">
+      <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
+          {/* Left Visual Column (Section 38: Brand / AI Visual) */}
+          <div className="hidden md:flex md:col-span-5 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-8 flex-col justify-between text-white relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-ai/20 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-slate-800 border border-slate-700/60 py-8 px-6 shadow-2xl rounded-2xl sm:px-10 text-white">
-          
-          {errorMessage && (
-            <div className="mb-5 bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs p-3.5 rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
+            <div className="relative z-10 space-y-6">
+              <Logo size="md" variant="dark" />
 
-          <form onSubmit={handleLogin} className="space-y-4 text-xs">
-            {/* Email Address */}
-            <div>
-              <label className="block font-medium text-slate-300 mb-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="pharmacist@yourpharmacy.com"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+              <div className="pt-8 space-y-3">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 bg-cyan-950/80 px-2.5 py-1 rounded-full border border-cyan-800">
+                  Pharmacy Portal
+                </span>
+                <h2 className="text-2xl font-extrabold tracking-tight text-white leading-snug">
+                  Automated medicine inventory intelligence.
+                </h2>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Sign in to manage stock with FEFO radar, auto-scan packaging with Gemma 4 Vision, and serve nearby patients.
+                </p>
               </div>
             </div>
 
-            {/* Password with Forgot Password link */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block font-medium text-slate-300">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForgotEmail(email);
-                    setShowForgotModal(true);
-                  }}
-                  className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
-                >
-                  Forgot Password?
-                </button>
+            <div className="relative z-10 pt-6 border-t border-slate-800 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-slate-300">
+                <ShieldCheck className="w-4 h-4 text-ai" />
+                <span>Licensed Pharmacist Authentication</span>
               </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>{loading ? 'Signing in...' : 'Login'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            {/* Quick 1-Click Demo Login Shortcuts */}
-            <div className="pt-3">
-              <div className="text-[11px] text-slate-400 font-medium mb-1.5 text-center">Quick Demo Login:</div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('apollo.indiranagar@medguard.io');
-                    setPassword('Password@123');
-                    loginPharmacist({ email: 'apollo.indiranagar@medguard.io', password: 'Password@123' })
-                      .then(() => navigate('/pharmacist/dashboard'))
-                      .catch(err => setErrorMessage(err.message));
-                  }}
-                  className="bg-slate-900/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 hover:text-white p-2 rounded-lg text-[11px] font-medium text-center transition-all cursor-pointer"
-                >
-                  🏥 Apollo (Bengaluru)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('medplus.koramangala@medguard.io');
-                    setPassword('Password@123');
-                    loginPharmacist({ email: 'medplus.koramangala@medguard.io', password: 'Password@123' })
-                      .then(() => navigate('/pharmacist/dashboard'))
-                      .catch(err => setErrorMessage(err.message));
-                  }}
-                  className="bg-slate-900/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 hover:text-white p-2 rounded-lg text-[11px] font-medium text-center transition-all cursor-pointer"
-                >
-                  💊 MedPlus (Koramangala)
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {/* Registration link and Customer Radar link */}
-          <div className="mt-6 pt-5 border-t border-slate-700/60">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="text-slate-400">
-                Don't have an account?{' '}
-                <Link
-                  to="/pharmacist/register"
-                  className="text-blue-400 hover:text-blue-300 font-semibold underline ml-1"
-                >
-                  Register
-                </Link>
-              </span>
-
-              <Link to="/" className="hover:text-slate-200">
-                ← Customer Radar
-              </Link>
+              <p className="text-[10px] text-slate-500">
+                Compliant with Pharmacy Act & Drugs Rules.
+              </p>
             </div>
           </div>
 
+          {/* Right Column: Authentication Form */}
+          <div className="md:col-span-7 p-6 sm:p-10 flex flex-col justify-between">
+            <div>
+              {/* Header on mobile */}
+              <div className="md:hidden mb-6">
+                <Logo size="md" />
+              </div>
+
+              <div className="space-y-1 mb-6">
+                <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                  Sign In to Pharmacist Account
+                </h1>
+                <p className="text-xs text-slate-500">
+                  Enter your registered credentials to access your pharmacy counter.
+                </p>
+              </div>
+
+              {errorMessage && (
+                <div className="mb-5 bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Email Address *
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="pharmacist@example.com"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Password *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(true)}
+                      className="text-xs text-primary hover:text-primary-dark font-semibold"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    type="submit"
+                    className="w-full py-3"
+                    isLoading={loading}
+                    rightIcon={<ArrowRight className="w-4 h-4" />}
+                  >
+                    Sign In to Pharmacy
+                  </Button>
+                </div>
+              </form>
+            </div>
+
+            <div className="pt-6 mt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <span>Don't have a pharmacy account yet?</span>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => navigate('/pharmacist/register')}
+              >
+                Register New Pharmacy
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Forgot Password Modal */}
       {showForgotModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-white space-y-4 shadow-2xl relative">
-            <button
-              type="button"
-              onClick={() => {
-                setShowForgotModal(false);
-                setForgotSuccess(null);
-                setForgotError(null);
-              }}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
-              <KeyRound className="w-4 h-4" />
-              <span>Reset Password</span>
-            </div>
-
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your registered pharmacist email address to receive a secure password reset link.
-            </p>
-
-            {forgotSuccess && (
-              <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs p-3 rounded-xl flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+        <Modal
+          isOpen={showForgotModal}
+          onClose={() => setShowForgotModal(false)}
+          title="Reset Password"
+          subtitle="We will email you instructions to reset your password."
+        >
+          <form onSubmit={handleForgotPassword} className="space-y-4 text-xs">
+            {forgotSuccess ? (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>{forgotSuccess}</span>
               </div>
-            )}
-
-            {forgotError && (
-              <div className="bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs p-3 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <span>{forgotError}</span>
-              </div>
-            )}
-
-            {!forgotSuccess ? (
-              <form onSubmit={handleForgotPasswordSubmit} className="space-y-3 text-xs">
+            ) : (
+              <>
+                {forgotError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                    <span>{forgotError}</span>
+                  </div>
+                )}
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Pharmacist Email</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Registered Email *</label>
                   <input
                     type="email"
                     required
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="pharmacist@yourpharmacy.com"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500"
+                    placeholder="pharmacist@example.com"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary"
                   />
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={forgotLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-all"
-                >
-                  {forgotLoading ? 'Sending link...' : 'Send Reset Link'}
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForgotModal(false);
-                  setForgotSuccess(null);
-                }}
-                className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold py-2.5 rounded-xl transition-all"
-              >
-                Close
-              </button>
+                <div className="pt-2 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    type="submit"
+                    isLoading={forgotLoading}
+                  >
+                    Send Reset Link
+                  </Button>
+                </div>
+              </>
             )}
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
-      {/* Email Not Verified Modal */}
+      {/* Email Verification Reminder Modal */}
       {showUnverifiedModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-white space-y-4 shadow-2xl text-center relative">
-            <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
-              <Mail className="w-6 h-6" />
-            </div>
-
-            <h2 className="text-lg font-extrabold text-white">
-              Email Not Verified
-            </h2>
-
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Please verify your email{unverifiedEmail ? ` (${unverifiedEmail})` : ''} before continuing.
+        <Modal
+          isOpen={showUnverifiedModal}
+          onClose={() => setShowUnverifiedModal(false)}
+          title="Email Verification Notice"
+          subtitle="Please confirm your account email to activate pharmacy operations."
+        >
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600">
+              A verification email was sent to <strong>{unverifiedEmail}</strong>. If you did not receive it or need another copy, click below.
             </p>
 
             {resendStatus && (
-              <div className={`p-3 rounded-xl text-xs flex items-center justify-center gap-2 ${
-                resendStatus.type === 'success' 
-                  ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300' 
-                  : 'bg-rose-500/20 border border-rose-500/30 text-rose-300'
+              <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                resendStatus.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border border-rose-200 text-rose-800'
               }`}>
                 {resendStatus.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 ) : (
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
                 )}
                 <span>{resendStatus.text}</span>
               </div>
             )}
 
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                disabled={resending}
+            <div className="pt-2 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowUnverifiedModal(false)}
+              >
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                isLoading={resending}
                 onClick={handleResendVerification}
-                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
               >
-                <span>{resending ? 'Sending...' : 'Resend Verification Email'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUnverifiedModal(false);
-                  setResendStatus(null);
-                }}
-                className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold py-2.5 px-4 rounded-xl transition-all"
-              >
-                Cancel
-              </button>
+                Resend Verification Email
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

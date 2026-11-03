@@ -15,27 +15,25 @@ import {
   ShieldCheck,
   Building
 } from 'lucide-react';
+import { Logo } from '../ui/Logo';
+import { Button } from '../ui/Button';
 
 export const PharmacySetup = () => {
   const navigate = useNavigate();
   const { user, profile, pharmacy, setupPharmacy, isSetupComplete, isEmailVerified } = usePharmacy();
 
-  // If already completed setup, redirect to dashboard
   if (isSetupComplete) {
     return <Navigate to="/pharmacist/dashboard" replace />;
   }
 
-  // If not logged in at all, redirect to login
   if (!user && !profile) {
     return <Navigate to="/pharmacist/login" replace />;
   }
 
-  // If email is not verified, redirect to login interface
   if (!isEmailVerified) {
     return <Navigate to="/pharmacist/login?unverified=true" replace />;
   }
 
-  // Pharmacy Details State
   const [shopName, setShopName] = useState('');
   const [ownerName, setOwnerName] = useState(profile?.full_name || '');
   const [phone, setPhone] = useState(profile?.phone || '');
@@ -46,7 +44,6 @@ export const PharmacySetup = () => {
   const [pincode, setPincode] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
 
-  // Location State
   const [latitude, setLatitude] = useState(12.9719);
   const [longitude, setLongitude] = useState(77.6412);
   const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
@@ -69,7 +66,6 @@ export const PharmacySetup = () => {
     e.preventDefault();
     setErrorMessage(null);
 
-    // Form validations
     if (!shopName.trim()) {
       setErrorMessage('Please provide the Pharmacy / Shop Trade Name.');
       return;
@@ -91,261 +87,209 @@ export const PharmacySetup = () => {
       return;
     }
     if (!isLocationConfirmed) {
-      setErrorMessage('Please confirm your physical shop location on the map in Step 3 before saving.');
+      setErrorMessage('Please confirm your physical shop location on the map before saving.');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Step 4: Create Pharmacy & Associate with Logged-in Pharmacist
-      const res = await setupPharmacy({
+      await setupPharmacy({
         name: shopName.trim(),
         ownerName: ownerName.trim(),
         phone: phone.trim(),
         email: email.trim(),
-        address: `${fullAddress.trim()}, ${city.trim()}, ${state.trim()} - ${pincode.trim()}`,
+        address: fullAddress.trim(),
         city: city.trim(),
         state: state.trim(),
         pincode: pincode.trim(),
-        licenseNumber: licenseNumber.trim(),
         latitude,
         longitude,
+        licenseNumber: licenseNumber.trim(),
       });
 
-      // On completion, open the dashboard
-      if (res?.success) {
-        navigate('/pharmacist/dashboard', { replace: true });
-      }
+      navigate('/pharmacist/dashboard');
     } catch (err) {
-      setErrorMessage(err.message || 'Failed to complete pharmacy setup.');
+      setErrorMessage(err.message || 'Failed to setup pharmacy');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Step Progress Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex w-12 h-12 rounded-2xl bg-blue-600 text-white items-center justify-center font-bold text-2xl shadow-xl shadow-blue-500/20 mb-1">
-            🏥
-          </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            Pharmacy Setup & Physical Location
-          </h1>
-          <p className="text-xs text-slate-400">
-            Account created for <strong>{profile?.full_name || user?.email}</strong>. Please complete shop details to activate your dashboard.
-          </p>
-
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] font-semibold text-slate-400">
-            <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              <span>1. Account</span>
-            </span>
-            <span>→</span>
-            <span className="bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">2. Pharmacy Details</span>
-            <span>→</span>
-            <span className="bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">3. Confirm Location</span>
-            <span>→</span>
-            <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">4. Dashboard</span>
-          </div>
-        </div>
-
-        {errorMessage && (
-          <div className="bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs p-3.5 rounded-2xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Step 2: Shop Details Card */}
-          <div className="bg-slate-800 border border-slate-700/60 rounded-2xl p-6 shadow-2xl text-white space-y-4">
-            <div className="border-b border-slate-700 pb-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                <Building2 className="w-4 h-4" />
-                <span>Step 2 — Shop & License Details</span>
-              </h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                These details will appear on your customer tax invoices and public medicine discovery cards.
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-8">
+      <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl p-6 sm:p-10 space-y-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-slate-100 gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-primary text-xs font-semibold mb-2">
+                <span>Step 2 & 3: Store & Radar Location</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                Pharmacy Trade Profile & Store Location
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                This official trade information will be displayed to nearby patients and printed on invoice headers.
               </p>
             </div>
+            <Logo size="md" />
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="sm:col-span-2">
-                <label className="block font-medium text-slate-300 mb-1">
-                  Shop / Pharmacy Trade Name *
-                </label>
-                <div className="relative">
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          {errorMessage && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Pharmacy Trade Information */}
+            <div className="space-y-4">
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                <Building2 className="w-4 h-4 text-primary" />
+                <span>Pharmacy Trade Details</span>
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Pharmacy Trade Name *
+                  </label>
                   <input
                     type="text"
                     required
                     value={shopName}
                     onChange={(e) => setShopName(e.target.value)}
-                    placeholder="e.g. Care Pharmacy"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-semibold placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    placeholder="e.g. Apollo Care Pharmacy - Indiranagar"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-bold focus:outline-none focus:border-primary"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  Owner / Licensee Name *
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Licensed Pharmacist / Owner *
+                  </label>
                   <input
                     type="text"
                     required
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
-                    placeholder="Owner / Pharmacist Full Name"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    placeholder="e.g. Bhuvana Venkata Chandu"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-semibold focus:outline-none focus:border-primary"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  Shop Contact Phone Number *
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Store Contact Phone *
+                  </label>
                   <input
                     type="tel"
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="10-digit mobile number"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    placeholder="e.g. 9876543210"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  Official Pharmacy Email
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="pharmacy@example.com"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  Pharmacy Drug License Number *
-                </label>
-                <div className="relative">
-                  <FileText className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Official Drug License Number *
+                  </label>
                   <input
                     type="text"
                     required
                     value={licenseNumber}
                     onChange={(e) => setLicenseNumber(e.target.value)}
-                    placeholder="e.g. DL-KA-2026-XXXXX"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    placeholder="e.g. DL-KA-2026-98765"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-primary"
                   />
                 </div>
-              </div>
 
-              <div className="sm:col-span-2">
-                <label className="block font-medium text-slate-300 mb-1">
-                  Full Street / Building Address *
-                </label>
-                <div className="relative">
-                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Full Physical Address *
+                  </label>
                   <input
                     type="text"
                     required
                     value={fullAddress}
                     onChange={(e) => setFullAddress(e.target.value)}
-                    placeholder="Street / Shop Address"
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    placeholder="e.g. 100 Feet Road, HAL 2nd Stage, Indiranagar"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-primary"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  City *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Bengaluru"
-                  className="w-full px-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">City *</label>
+                  <input
+                    type="text"
+                    required
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g. Bengaluru"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">
-                  State *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  placeholder="Karnataka"
-                  className="w-full px-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">State *</label>
+                    <input
+                      type="text"
+                      required
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
+                      placeholder="e.g. Karnataka"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-primary"
+                    />
+                  </div>
 
-              <div className="sm:col-span-2">
-                <label className="block font-medium text-slate-300 mb-1">
-                  Pincode / Postal Code *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={pincode}
-                  onChange={(e) => setPincode(e.target.value)}
-                  placeholder="560038"
-                  className="w-full px-3 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Pincode *</label>
+                    <input
+                      type="text"
+                      required
+                      value={pincode}
+                      onChange={(e) => setPincode(e.target.value)}
+                      placeholder="e.g. 560038"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Step 3: Interactive Location Confirmation Component */}
-          <div className="bg-slate-800 border border-slate-700/60 rounded-2xl p-6 shadow-2xl text-white">
-            <LocationPicker
-              initialLat={latitude}
-              initialLng={longitude}
-              isConfirmed={isLocationConfirmed}
-              setIsConfirmed={setIsLocationConfirmed}
-              onLocationConfirmed={handleLocationConfirmed}
-            />
-          </div>
+            {/* GPS Store Location Section */}
+            <div className="space-y-4 pt-2">
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                <MapPin className="w-4 h-4 text-rose-500" />
+                <span>Physical Store Coordinates (Live Stock Radar Anchor)</span>
+              </h2>
 
-          {/* Step 4: Submission */}
-          <div className="flex items-center justify-between pt-2">
-            <p className="text-xs text-slate-400">
-              Only you will have administrative access to this pharmacy's private records.
-            </p>
+              <LocationPicker
+                initialLat={latitude}
+                initialLng={longitude}
+                onLocationConfirmed={handleLocationConfirmed}
+                isConfirmed={isLocationConfirmed}
+                setIsConfirmed={setIsLocationConfirmed}
+              />
+            </div>
 
-            <button
-              type="submit"
-              disabled={loading || !isLocationConfirmed}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-2"
-            >
-              <span>{loading ? 'Saving Pharmacy...' : 'Save Pharmacy & Continue'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </form>
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              <Button
+                variant="primary"
+                size="lg"
+                type="submit"
+                isLoading={loading}
+                rightIcon={<ArrowRight className="w-4 h-4" />}
+              >
+                Complete Setup & Open Dashboard
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

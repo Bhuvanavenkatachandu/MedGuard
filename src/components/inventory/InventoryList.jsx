@@ -11,16 +11,28 @@ import {
   Edit3, 
   Trash2,
   Clock, 
-  ChevronDown
+  ChevronDown,
+  ArrowUpDown,
+  SlidersHorizontal,
+  X
 } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { StatusBadge } from '../ui/StatusBadge';
+import { Modal } from '../ui/Modal';
+import { EmptyState } from '../ui/EmptyState';
+import { formatMedicineDate } from '../../utils/dateFormatter';
 
 export const InventoryList = ({ setActiveTab }) => {
   const { inventory, medicines, batches, adjustStock, deleteInventoryItem } = usePharmacy();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'expired'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'in_stock', 'low_stock', 'expired', 'out_of_stock'
+  const [sortBy, setSortBy] = useState('name'); // 'name', 'stock', 'expiry'
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc', 'desc'
+
+  // Stock Adjustment Modal
   const [editingItem, setEditingItem] = useState(null);
   const [adjustPieces, setAdjustPieces] = useState('');
-  const [adjustReason, setAdjustReason] = useState('Stock count correction');
+  const [adjustReason, setAdjustReason] = useState('Stock count physical audit correction');
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -30,9 +42,9 @@ export const InventoryList = ({ setActiveTab }) => {
       const med = medicines.find(m => m.id === inv.medicine_id) || {};
       const batch = batches.find(b => b.id === inv.batch_id) || {};
       const piecesPerStrip = inv.pieces_per_strip || med.pieces_per_strip || 10;
-      const totalPieces = inv.total_pieces || 0;
+      const totalPieces = Number(inv.total_pieces) || 0;
 
-      // STRICT REQUIREMENT FORMULA:
+      // Exact strip and piece formula:
       const availableStrips = Math.floor(totalPieces / piecesPerStrip);
       const loosePieces = totalPieces % piecesPerStrip;
 
@@ -53,26 +65,33 @@ export const InventoryList = ({ setActiveTab }) => {
         generic_name: med.generic_name || '',
         strength: med.strength || '',
         brand: med.brand || '',
+        category: med.category || 'General',
+        manufacturer: med.manufacturer || 'Authorized Pharma',
         batch_number: batch.batch_number || 'N/A',
-        expiry_date: batch.expiry_date || 'N/A',
+        expiry_date: batch.expiry_date || '',
+        formatted_expiry: formatMedicineDate(batch.expiry_date),
         piecesPerStrip,
+        totalPieces,
         availableStrips,
         loosePieces,
+        pricePerStrip: Number(inv.price_per_strip || 0),
+        pricePerPiece: Number(inv.price_per_piece || 0),
         status,
       };
     });
   }, [inventory, medicines, batches, todayStr]);
 
-  // Filtering
+  // Filtering & Sorting
   const filteredItems = useMemo(() => {
-    return enrichedInventory.filter((item) => {
+    let list = enrichedInventory.filter((item) => {
       const query = searchTerm.toLowerCase().trim();
       const matchesSearch = 
         !query ||
         item.medicine_name.toLowerCase().includes(query) ||
         item.generic_name.toLowerCase().includes(query) ||
         item.batch_number.toLowerCase().includes(query) ||
-        item.strength.toLowerCase().includes(query);
+        item.strength.toLowerCase().includes(query) ||
+        item.manufacturer.toLowerCase().includes(query);
 
       const matchesStatus = 
         statusFilter === 'all' || 
@@ -80,9 +99,29 @@ export const InventoryList = ({ setActiveTab }) => {
 
       return matchesSearch && matchesStatus;
     });
-  }, [enrichedInventory, searchTerm, statusFilter]);
 
-  const handleSaveAdjustment = (e) => {
+    list.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = a.medicine_name.localeCompare(b.medicine_name);
+      } else if (sortBy === 'stock') {
+        comparison = a.totalPieces - b.totalPieces;
+      } else if (sortBy === 'expiry') {
+        comparison = (a.expiry_date || '').localeCompare(b.expiry_date || '');
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [enrichedInventory, searchTerm, statusFilter, sortBy, sortOrder]);
+
+  const handleOpenAdjust = (item) => {
+    setEditingItem(item);
+    setAdjustPieces(item.totalPieces.toString());
+    setAdjustReason('Routine stock count reconciliation');
+  };
+
+  const handleSaveAdjustment = async (e) => {
     e.preventDefault();
     if (!editingItem) return;
     const pieces = parseInt(adjustPieces, 10);
@@ -91,42 +130,66 @@ export const InventoryList = ({ setActiveTab }) => {
       return;
     }
 
-    adjustStock(editingItem.id, pieces, adjustReason);
-    setEditingItem(null);
+    try {
+      await adjustStock({
+        inventoryId: editingItem.id,
+        newTotalPieces: pieces,
+        reason: adjustReason,
+      });
+      setEditingItem(null);
+    } catch (err) {
+      alert(err.message || 'Failed to adjust stock');
+    }
   };
+
+  const handleDeleteItem = async (item) => {
+    if (confirm(`Are you sure you want to delete ${item.medicine_name} (${item.batch_number}) from your pharmacy catalog?`)) {
+      try {
+        await deleteInventoryItem(item.id);
+      } catch (err) {
+        alert(err.message || 'Failed to delete item');
+      }
+    }
+  };
+
+  // Live conversion calculations for adjust modal
+  const adjustPiecesNum = parseInt(adjustPieces, 10) || 0;
+  const adjustStripsCalculated = editingItem ? Math.floor(adjustPiecesNum / editingItem.piecesPerStrip) : 0;
+  const adjustLooseCalculated = editingItem ? adjustPiecesNum % editingItem.piecesPerStrip : 0;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
             Inventory & Strip/Piece Management
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Internal source of truth is total pieces. Live calculation for strips and loose pieces.
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Internal source of truth is total pieces. Live calculation for strips and loose units.
           </p>
         </div>
 
-        <button
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => setActiveTab('add-stock')}
-          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition-all shadow-md shadow-blue-500/20"
+          leftIcon={<PlusCircle className="w-4 h-4" />}
         >
-          <PlusCircle className="w-4 h-4" />
-          <span>Add New Stock</span>
-        </button>
+          Add New Stock
+        </Button>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row gap-3 items-center justify-between">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-card flex flex-col md:flex-row gap-3 items-center justify-between">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter by medicine name, generic salt, batch number, strength..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-medium"
+            placeholder="Search medicine, salt composition, batch number, strength..."
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary font-medium"
           />
         </div>
 
@@ -141,223 +204,229 @@ export const InventoryList = ({ setActiveTab }) => {
             <button
               key={tab.id}
               onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`text-xs font-semibold px-3 py-1.5 rounded-xl border transition-colors whitespace-nowrap cursor-pointer ${
                 statusFilter === tab.id
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-primary text-white border-primary shadow-xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}
             >
               {tab.label}
             </button>
           ))}
         </div>
+
+        {/* Sort selector */}
+        <div className="flex items-center gap-2 w-full md:w-auto text-xs text-slate-600">
+          <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:border-primary"
+          >
+            <option value="name">Sort by Name</option>
+            <option value="stock">Sort by Stock</option>
+            <option value="expiry">Sort by Expiry</option>
+          </select>
+        </div>
       </div>
 
-      {/* Inventory Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase tracking-wider text-[10px]">
-                <th className="py-3 px-4 font-semibold">Medicine & Generic</th>
-                <th className="py-3 px-4 font-semibold">Batch No</th>
-                <th className="py-3 px-4 font-semibold">Expiry Date</th>
-                <th className="py-3 px-4 font-semibold text-center">Pcs / Strip</th>
-                <th className="py-3 px-4 font-semibold text-center">Available Stock</th>
-                <th className="py-3 px-4 font-semibold text-right">Strip Price</th>
-                <th className="py-3 px-4 font-semibold text-right">Piece Price</th>
-                <th className="py-3 px-4 font-semibold text-center">Status</th>
-                <th className="py-3 px-4 font-semibold text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    No matching inventory found.
-                  </td>
+      {/* Main Inventory Table (Section 23) */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-card overflow-hidden">
+        {filteredItems.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No Medicines Matching Filter"
+            description={
+              searchTerm
+                ? `No inventory matches "${searchTerm}". Try clearing your search term or adjusting status filter.`
+                : 'Your pharmacy inventory is empty. Add your first medicine manually or use the AI packaging scanner.'
+            }
+            actionLabel="Add Medicine"
+            onAction={() => setActiveTab('add-stock')}
+            secondaryActionLabel={searchTerm ? 'Clear Search' : undefined}
+            onSecondaryAction={() => setSearchTerm('')}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200/80 uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-4 font-semibold">Medicine Details</th>
+                  <th className="py-3 px-4 font-semibold">Batch Number</th>
+                  <th className="py-3 px-4 font-semibold">Expiry Date</th>
+                  <th className="py-3 px-4 font-semibold">Strip Config</th>
+                  <th className="py-3 px-4 font-semibold">Current Stock</th>
+                  <th className="py-3 px-4 font-semibold text-right">Pricing (₹)</th>
+                  <th className="py-3 px-4 font-semibold text-center">Status</th>
+                  <th className="py-3 px-4 font-semibold text-center">Actions</th>
                 </tr>
-              ) : (
-                filteredItems.map((item) => (
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredItems.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                    {/* Medicine Name & Strength */}
+                    {/* Medicine */}
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                        <span>{item.medicine_name}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-extrabold text-slate-900 text-sm">{item.medicine_name}</span>
                         {item.strength && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded border border-blue-100">
+                          <span className="bg-blue-50 text-primary text-[10px] font-bold px-1.5 py-0.2 rounded border border-blue-200">
                             {item.strength}
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-400">
-                        {item.generic_name || item.brand || 'General Category'}
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {item.generic_name && <span>{item.generic_name}</span>}
+                        {item.brand && <span> • {item.brand}</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {item.manufacturer}
                       </div>
                     </td>
 
-                    {/* Batch Number */}
-                    <td className="py-3.5 px-4 font-mono font-medium text-slate-700">
+                    {/* Batch */}
+                    <td className="py-3.5 px-4 font-mono font-semibold text-slate-800">
                       {item.batch_number}
                     </td>
 
-                    {/* Expiry Date */}
+                    {/* Expiry */}
                     <td className="py-3.5 px-4">
-                      <div className={`font-mono ${
-                        item.status === 'expired' 
-                          ? 'text-rose-600 font-bold' 
-                          : item.batch.expiry_date && new Date(item.batch.expiry_date) <= new Date(Date.now() + 30 * 86400000)
-                          ? 'text-amber-600 font-bold'
-                          : 'text-slate-600'
-                      }`}>
-                        {item.expiry_date}
+                      <div className="font-semibold text-slate-900">{item.formatted_expiry}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">{item.expiry_date}</div>
+                    </td>
+
+                    {/* Pack size */}
+                    <td className="py-3.5 px-4 text-slate-600 font-mono">
+                      {item.piecesPerStrip} pcs / strip
+                    </td>
+
+                    {/* Stock (Strips + Loose + Total) */}
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-black text-slate-900 text-sm font-mono">{item.totalPieces}</span>
+                        <span className="text-[10px] text-slate-500">total pcs</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-medium">
+                        {item.availableStrips} strip(s) + {item.loosePieces} loose
                       </div>
                     </td>
 
-                    {/* Pieces Per Strip */}
-                    <td className="py-3.5 px-4 text-center font-mono text-slate-600">
-                      {item.piecesPerStrip}
-                    </td>
-
-                    {/* Available Stock Breakdown */}
-                    <td className="py-3.5 px-4 text-center">
-                      <div className="inline-flex flex-col items-center">
-                        <div className="font-extrabold text-slate-900 text-sm">
-                          {item.availableStrips} <span className="text-[10px] font-normal text-slate-500">strips</span> + {item.loosePieces} <span className="text-[10px] font-normal text-slate-500">loose</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          Total: <strong>{item.total_pieces}</strong> pieces
-                        </div>
+                    {/* Price */}
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="font-bold text-slate-900 font-mono">
+                        ₹{item.pricePerStrip.toFixed(2)} <span className="text-[10px] text-slate-400 font-normal">/ strip</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        ₹{item.pricePerPiece.toFixed(2)} / pc
                       </div>
                     </td>
 
-                    {/* Strip Price */}
-                    <td className="py-3.5 px-4 font-bold text-slate-900 text-right">
-                      ₹{Number(item.price_per_strip).toFixed(2)}
-                    </td>
-
-                    {/* Piece Price */}
-                    <td className="py-3.5 px-4 font-bold text-blue-600 text-right">
-                      ₹{Number(item.price_per_piece).toFixed(2)}
-                    </td>
-
-                    {/* Stock Status Badge */}
+                    {/* Status Badge */}
                     <td className="py-3.5 px-4 text-center">
-                      {item.status === 'expired' && (
-                        <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200">
-                          Expired
-                        </span>
-                      )}
-                      {item.status === 'low_stock' && (
-                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                          Low Stock
-                        </span>
-                      )}
-                      {item.status === 'out_of_stock' && (
-                        <span className="bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                          Out of Stock
-                        </span>
-                      )}
-                      {item.status === 'in_stock' && (
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                          In Stock
-                        </span>
-                      )}
+                      <StatusBadge status={item.status} size="xs" />
                     </td>
 
-                    {/* Action Button */}
+                    {/* Actions */}
                     <td className="py-3.5 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="inline-flex items-center gap-1.5">
                         <button
-                          onClick={() => {
-                            setEditingItem(item);
-                            setAdjustPieces(item.total_pieces.toString());
-                          }}
-                          className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-colors"
-                          title="Adjust Total Pieces"
+                          onClick={() => handleOpenAdjust(item)}
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-primary hover:text-white text-slate-600 transition-colors cursor-pointer"
+                          title="Adjust physical stock pieces count"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Are you sure you want to remove ${item.medicine_name} (Batch: ${item.batch_number}) from inventory?`)) {
-                              deleteInventoryItem(item.id);
-                            }
-                          }}
-                          className="p-1.5 hover:bg-rose-100 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
-                          title="Delete Item from Inventory"
+                          onClick={() => handleDeleteItem(item)}
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-400 transition-colors cursor-pointer"
+                          title="Delete catalog record"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Adjust Stock Modal */}
+      {/* Stock Adjustment Modal */}
       {editingItem && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="text-base font-bold text-slate-900 mb-1">
-              Adjust Stock: {editingItem.medicine_name}
-            </h3>
-            <p className="text-xs text-slate-500 mb-4 font-mono">
-              Batch: {editingItem.batch_number} • Currently {editingItem.total_pieces} pieces
-            </p>
-
-            <form onSubmit={handleSaveAdjustment} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  New Total Pieces (Source of Truth)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  required
-                  value={adjustPieces}
-                  onChange={(e) => setAdjustPieces(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-bold"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Will represent {Math.floor((parseInt(adjustPieces, 10) || 0) / editingItem.piecesPerStrip)} full strips and {(parseInt(adjustPieces, 10) || 0) % editingItem.piecesPerStrip} loose pieces.
-                </p>
+        <Modal
+          isOpen={Boolean(editingItem)}
+          onClose={() => setEditingItem(null)}
+          title={`Adjust Physical Stock: ${editingItem.medicine_name}`}
+          subtitle={`Batch: ${editingItem.batch_number} • Current Total: ${editingItem.totalPieces} pieces`}
+        >
+          <form onSubmit={handleSaveAdjustment} className="space-y-4 text-xs">
+            {/* Strip / Piece Calculation Helper (Section 29) */}
+            <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3.5 space-y-2">
+              <span className="font-bold text-primary block">
+                Strip & Piece Inventory Helper
+              </span>
+              <p className="text-slate-600 text-[11px]">
+                Pack configuration: <strong>1 strip = {editingItem.piecesPerStrip} pieces</strong>.
+              </p>
+              <div className="grid grid-cols-2 gap-2 pt-1 font-mono">
+                <div className="bg-white p-2 rounded-lg border border-blue-100">
+                  <span className="text-[10px] text-slate-400 block">Converted Strips</span>
+                  <span className="font-bold text-slate-900 text-sm">{adjustStripsCalculated} strips</span>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-blue-100">
+                  <span className="text-[10px] text-slate-400 block">Remaining Loose Pieces</span>
+                  <span className="font-bold text-slate-900 text-sm">{adjustLooseCalculated} loose</span>
+                </div>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Adjustment Reason (Audit Trail)
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={adjustReason}
-                  onChange={(e) => setAdjustReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                New Total Pieces Count *
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={adjustPieces}
+                onChange={(e) => setAdjustPieces(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 font-mono focus:outline-none focus:border-primary"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Enter the exact total number of tablets/capsules counted on shelf.
+              </p>
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingItem(null)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                >
-                  Confirm Adjustment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Adjustment Reason (Auditable) *
+              </label>
+              <input
+                type="text"
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingItem(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+              >
+                Save Adjustment
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

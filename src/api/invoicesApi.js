@@ -12,7 +12,7 @@ export const invoicesApi = {
   },
 
   getPdfUrl: (invoiceId) => {
-    const base = apiClient.defaults.baseURL || 'http://localhost:8000/api';
+    const base = apiClient.defaults.baseURL || '/api';
     return `${base}/invoices/${invoiceId}/pdf`;
   },
 };

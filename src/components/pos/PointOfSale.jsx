@@ -20,9 +20,14 @@ import {
   Download,
   Send,
   Sparkles,
-  Phone
+  Phone,
+  Layers,
+  Receipt
 } from 'lucide-react';
 import { generateInvoicePdf } from '../../utils/pdfGenerator';
+import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
+import { formatMedicineDate } from '../../utils/dateFormatter';
 
 export const PointOfSale = ({ onSaleComplete }) => {
   const navigate = useNavigate();
@@ -56,7 +61,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
   // Cart State
   const [cartItems, setCartItems] = useState([]);
   const [discountPercent, setDiscountPercent] = useState(0);
-  const [taxPercent, setTaxPercent] = useState(0); // 0 or 5% / 12%
+  const [taxPercent, setTaxPercent] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
 
   // Checkout Execution & Status
@@ -67,7 +72,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Phone lookup effect: Normalize and auto-check existing customer
+  // Phone lookup effect
   useEffect(() => {
     const cleaned = normalizePhone(phoneInput);
     if (cleaned.length >= 10) {
@@ -87,7 +92,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
   // Available medicines with in-stock, non-expired batches
   const availableMedicines = useMemo(() => {
     return medicines.filter((med) => {
-      // Find non-expired batches with stock > 0
       const validBatches = batches.filter(
         b => b.medicine_id === med.id && b.expiry_date >= todayStr
       );
@@ -109,8 +113,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
     });
   }, [medicines, batches, inventory, medicineQuery, todayStr]);
 
-  // When medicine is selected, implement FEFO:
-  // Automatically recommend the non-expired batch with earliest expiry date!
+  // When medicine is selected, recommend earliest expiry batch (FEFO)
   useEffect(() => {
     if (selectedMedicine) {
       const validBatches = batches
@@ -119,7 +122,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
           const inv = inventory.find(i => i.batch_id === b.id);
           return inv && Number(inv.total_pieces) > 0;
         })
-        .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date)); // FEFO: Earliest expiry first!
+        .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date));
 
       if (validBatches.length > 0) {
         setSelectedBatchId(validBatches[0].id);
@@ -129,14 +132,12 @@ export const PointOfSale = ({ onSaleComplete }) => {
     }
   }, [selectedMedicine, batches, inventory, todayStr]);
 
-  // Get active selected batch details & stock limits
   const activeBatch = batches.find(b => b.id === selectedBatchId);
   const activeInventory = inventory.find(i => i.batch_id === selectedBatchId);
   const piecesPerStrip = activeInventory?.pieces_per_strip || selectedMedicine?.pieces_per_strip || 10;
   const maxAvailablePieces = activeInventory?.total_pieces || 0;
   const maxAvailableStrips = Math.floor(maxAvailablePieces / piecesPerStrip);
 
-  // Add Item to Cart
   const handleAddToCart = () => {
     if (!selectedMedicine || !activeBatch || !activeInventory) {
       setErrorMessage('Please select an in-stock medicine and batch.');
@@ -151,7 +152,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
 
     const piecesRequested = selectedUnitType === 'strip' ? qty * piecesPerStrip : qty;
 
-    // Check if already in cart
     const existingInCart = cartItems.find(it => it.batch_id === activeBatch.id && it.unit_type === selectedUnitType);
     const existingPieces = cartItems
       .filter(it => it.batch_id === activeBatch.id)
@@ -201,21 +201,19 @@ export const PointOfSale = ({ onSaleComplete }) => {
     setCartItems(cartItems.filter((_, idx) => idx !== index));
   };
 
-  // Financial Calculations
   const subtotal = cartItems.reduce((acc, item) => acc + item.total_price, 0);
   const discountAmount = (subtotal * (parseFloat(discountPercent) || 0)) / 100;
   const taxableAmount = Math.max(0, subtotal - discountAmount);
   const taxAmount = (taxableAmount * (parseFloat(taxPercent) || 0)) / 100;
   const grandTotal = Math.round((taxableAmount + taxAmount) * 100) / 100;
 
-  // Checkout & Sale Confirmation
   const handleCheckout = async (e) => {
     e.preventDefault();
     if (processing) return;
     setErrorMessage(null);
 
     if (cartItems.length === 0) {
-      setErrorMessage('Your cart is empty. Add medicine items before billing.');
+      setErrorMessage('Your cart is empty. Add medicine items before completing sale.');
       return;
     }
 
@@ -248,7 +246,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
         payment_method: paymentMethod,
       });
 
-      // Normalize completedSale structure
       setCompletedSale({
         ...saleResult,
         sale: {
@@ -269,7 +266,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
         emailStatus: customerEmail.trim() ? 'sent' : 'none',
       });
 
-      // Clear Cart
       setCartItems([]);
       setPhoneInput('');
       setCustomerName('');
@@ -282,7 +278,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
     }
   };
 
-  // Resend Invoice Email Action
   const handleResendEmail = async () => {
     if (!completedSale?.invoice?.id) return;
     setResendingEmail(true);
@@ -323,7 +318,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
     }
   };
 
-  // Redirect to Dashboard after Sale
   const handleGoToDashboard = () => {
     setCountdown(null);
     setCompletedSale(null);
@@ -334,7 +328,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
     }
   };
 
-  // Automatic countdown redirection to dashboard
   useEffect(() => {
     if (!completedSale) {
       setCountdown(null);
@@ -353,7 +346,6 @@ export const PointOfSale = ({ onSaleComplete }) => {
     return () => clearInterval(interval);
   }, [completedSale]);
 
-  // Clean navigation outside state updater
   useEffect(() => {
     if (countdown === 0 && completedSale) {
       handleGoToDashboard();
@@ -369,17 +361,17 @@ export const PointOfSale = ({ onSaleComplete }) => {
             <span className="p-1.5 rounded-lg bg-emerald-100 text-emerald-700 font-bold">
               <ShoppingCart className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              POS Billing Counter & Cart
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+              POS Counter & Billing
             </h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            FEFO batch recommendation, atomic stock deduction, instant PDF invoice, and automated email delivery.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            FEFO batch recommendation, atomic strip/piece deduction, instant PDF invoice, and email delivery.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+          <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/90 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
             <span>FEFO Guard Active</span>
           </span>
@@ -393,16 +385,16 @@ export const PointOfSale = ({ onSaleComplete }) => {
         </div>
       )}
 
-      {/* POS Layout: Left Column = Customer & Medicine Selector (7 cols), Right Column = Cart & Checkout (5 cols) */}
+      {/* POS Layout: Left Column = Customer & Product Picker (7 cols), Right Column = Cart & Total (5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Side: Customer Lookup & Product Picker */}
         <div className="lg:col-span-7 space-y-5">
           {/* 1. Customer Identification Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-blue-600" />
-                <span>1. Customer Search (By Phone)</span>
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-primary" />
+                <span>1. Customer Lookup</span>
               </h2>
 
               {existingCustomer ? (
@@ -429,7 +421,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                   value={phoneInput}
                   onChange={(e) => setPhoneInput(e.target.value)}
                   placeholder="e.g. 9876543210"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-primary"
                 />
               </div>
 
@@ -442,30 +434,31 @@ export const PointOfSale = ({ onSaleComplete }) => {
                   required
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Arun Nair"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:border-blue-500"
+                  placeholder="e.g. Rahul Sharma"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:border-primary"
                 />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Customer Gmail (For Invoice)
+                  Customer Email (PDF Invoice)
                 </label>
                 <input
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   placeholder="patient@gmail.com"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-primary"
                 />
               </div>
             </div>
           </div>
 
           {/* 2. Medicine Search & FEFO Batch Selector */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100">
-              2. Add Medicine to Cart
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card space-y-4">
+            <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider pb-2 border-b border-slate-100 flex items-center justify-between">
+              <span>2. Select Medicine & Dispensing Unit</span>
+              <span className="text-[10px] text-primary font-semibold">FEFO Auto-Sorting</span>
             </h2>
 
             {/* Medicine Search */}
@@ -476,7 +469,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                 value={medicineQuery}
                 onChange={(e) => setMedicineQuery(e.target.value)}
                 placeholder="Search medicine brand, generic name, salt..."
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-medium"
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary font-medium"
               />
             </div>
 
@@ -489,18 +482,18 @@ export const PointOfSale = ({ onSaleComplete }) => {
                   <div
                     key={med.id}
                     onClick={() => setSelectedMedicine(med)}
-                    className={`p-2 rounded-lg cursor-pointer text-xs flex items-center justify-between transition-colors ${
+                    className={`p-2 rounded-xl cursor-pointer text-xs flex items-center justify-between transition-colors ${
                       selectedMedicine?.id === med.id
-                        ? 'bg-blue-600 text-white font-semibold'
+                        ? 'bg-primary text-white font-semibold'
                         : 'hover:bg-slate-100 text-slate-700'
                     }`}
                   >
                     <div>
                       <span className="font-bold">{med.name}</span>{' '}
-                      {med.strength && <span className="opacity-80">({med.strength})</span>}
+                      {med.strength && <span className="opacity-90">({med.strength})</span>}
                       <span className="text-[10px] block opacity-75">{med.generic_name}</span>
                     </div>
-                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/10">
+                    <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-black/10">
                       Select
                     </span>
                   </div>
@@ -512,23 +505,23 @@ export const PointOfSale = ({ onSaleComplete }) => {
             {selectedMedicine && (
               <div className="pt-3 border-t border-slate-100 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">
+                  <span className="text-xs font-bold text-slate-900">
                     Selected: {selectedMedicine.name}
                   </span>
                   <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
-                    FEFO Auto-Recommendation
+                    FEFO Earliest Expiry Auto-Selected
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Batch (Earliest Expiry First)
+                      Batch (FEFO Earliest Expiry First)
                     </label>
                     <select
                       value={selectedBatchId}
                       onChange={(e) => setSelectedBatchId(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-primary"
                     >
                       {batches
                         .filter(b => b.medicine_id === selectedMedicine.id && b.expiry_date >= todayStr)
@@ -537,7 +530,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                           const inv = inventory.find(i => i.batch_id === b.id);
                           return (
                             <option key={b.id} value={b.id}>
-                              {b.batch_number} (Exp: {b.expiry_date} • {inv?.total_pieces || 0} pcs left)
+                              {b.batch_number} (Exp: {formatMedicineDate(b.expiry_date)} • {inv?.total_pieces || 0} pcs left)
                             </option>
                           );
                         })}
@@ -546,14 +539,14 @@ export const PointOfSale = ({ onSaleComplete }) => {
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Dispensing Unit
+                      Dispensing Unit (Section 29)
                     </label>
                     <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
                       <button
                         type="button"
                         onClick={() => setSelectedUnitType('strip')}
-                        className={`py-1 text-xs font-bold rounded-lg transition-colors ${
-                          selectedUnitType === 'strip' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'
+                        className={`py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                          selectedUnitType === 'strip' ? 'bg-white text-primary shadow-xs' : 'text-slate-600'
                         }`}
                       >
                         Strip ({piecesPerStrip} pcs)
@@ -561,8 +554,8 @@ export const PointOfSale = ({ onSaleComplete }) => {
                       <button
                         type="button"
                         onClick={() => setSelectedUnitType('piece')}
-                        className={`py-1 text-xs font-bold rounded-lg transition-colors ${
-                          selectedUnitType === 'piece' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-600'
+                        className={`py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                          selectedUnitType === 'piece' ? 'bg-white text-primary shadow-xs' : 'text-slate-600'
                         }`}
                       >
                         Loose Piece
@@ -574,30 +567,31 @@ export const PointOfSale = ({ onSaleComplete }) => {
                     <label className="block font-semibold text-slate-700 mb-1">
                       Quantity ({selectedUnitType})
                     </label>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <input
                         type="number"
                         min="1"
                         max={selectedUnitType === 'strip' ? maxAvailableStrips : maxAvailablePieces}
                         value={selectedQty}
                         onChange={(e) => setSelectedQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-primary font-mono"
                       />
-                      <button
+                      <Button
+                        variant="primary"
+                        size="xs"
                         type="button"
                         onClick={handleAddToCart}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-xl text-xs whitespace-nowrap shadow-sm"
+                        className="whitespace-nowrap px-3 py-2"
                       >
                         Add to Cart
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
 
-                {/* Stock limit helper */}
                 <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                  <span>Available in this batch: <strong>{maxAvailablePieces} pieces</strong> ({maxAvailableStrips} full strips + {maxAvailablePieces % piecesPerStrip} loose)</span>
-                  <span className="font-bold text-blue-600">
+                  <span>Available in batch: <strong>{maxAvailablePieces} pieces</strong> ({maxAvailableStrips} strips + {maxAvailablePieces % piecesPerStrip} loose)</span>
+                  <span className="font-bold text-primary font-mono">
                     Price: ₹{selectedUnitType === 'strip' ? Number(activeInventory?.price_per_strip || 0).toFixed(2) : Number(activeInventory?.price_per_piece || 0).toFixed(2)}
                   </span>
                 </div>
@@ -608,19 +602,19 @@ export const PointOfSale = ({ onSaleComplete }) => {
 
         {/* Right Side: Cart Summary & Checkout */}
         <div className="lg:col-span-5">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between h-full space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-card flex flex-col justify-between h-full space-y-4">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="w-4 h-4 text-slate-700" />
-                  <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                     Cart Items ({cartItems.length})
                   </h2>
                 </div>
                 {cartItems.length > 0 && (
                   <button
                     onClick={() => setCartItems([])}
-                    className="text-[10px] text-slate-400 hover:text-rose-600"
+                    className="text-[10px] text-slate-400 hover:text-rose-600 font-semibold"
                   >
                     Clear All
                   </button>
@@ -644,7 +638,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="font-bold text-slate-900">
+                        <span className="font-bold text-slate-900 font-mono">
                           ₹{item.total_price.toFixed(2)}
                         </span>
                         <button
@@ -700,7 +694,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                 {/* Grand Total */}
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-extrabold text-slate-900">
                   <span>Grand Total:</span>
-                  <span className="text-lg text-blue-700 font-mono">₹{grandTotal.toFixed(2)}</span>
+                  <span className="text-xl text-primary font-mono">₹{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -715,7 +709,7 @@ export const PointOfSale = ({ onSaleComplete }) => {
                       key={m}
                       type="button"
                       onClick={() => setPaymentMethod(m)}
-                      className={`py-1.5 rounded-lg border text-center transition-colors ${
+                      className={`py-1.5 rounded-xl border text-center transition-colors cursor-pointer ${
                         paymentMethod === m
                           ? 'bg-slate-900 border-slate-900 text-white'
                           : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -729,21 +723,23 @@ export const PointOfSale = ({ onSaleComplete }) => {
             </div>
 
             {/* Complete Sale Button */}
-            <button
-              onClick={handleCheckout}
+            <Button
+              variant="success"
+              size="lg"
+              className="w-full py-3"
               disabled={processing || cartItems.length === 0}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-600/20"
+              onClick={handleCheckout}
+              rightIcon={<ArrowRight className="w-4 h-4" />}
             >
-              <span>{processing ? 'Processing Atomic Sale...' : `Complete Sale (₹${grandTotal.toFixed(2)})`}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+              {processing ? 'Processing Atomic Sale...' : `Complete Sale (₹${grandTotal.toFixed(2)})`}
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Post-Sale Completion Modal */}
       {completedSale && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 space-y-4">
             <div className="text-center space-y-2">
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
@@ -756,18 +752,14 @@ export const PointOfSale = ({ onSaleComplete }) => {
                 Invoice No: <strong>{completedSale?.sale?.invoice_number || completedSale?.invoice_number || completedSale?.sale_number}</strong>
               </p>
               {countdown !== null && (
-                <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full border border-blue-100">
+                <div className="inline-flex items-center gap-1.5 bg-blue-50 text-primary text-xs font-semibold px-3 py-1 rounded-full border border-blue-100">
                   <Clock className="w-3.5 h-3.5 animate-spin" />
                   <span>Redirecting to Dashboard in {countdown}s...</span>
                 </div>
               )}
             </div>
 
-            {/* Status Checklist strictly following prompt:
-                "Show:
-                 Sale successful
-                 Invoice generated
-                 Email failed / Email sent" */}
+            {/* Status Checklist */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs">
               <div className="flex items-center justify-between text-emerald-700 font-semibold">
                 <span className="flex items-center gap-1.5">
@@ -823,37 +815,35 @@ export const PointOfSale = ({ onSaleComplete }) => {
 
             {/* Modal Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDownloadPdf}
-                className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                leftIcon={<Download className="w-4 h-4 text-primary" />}
               >
-                <Download className="w-4 h-4 text-blue-600" />
-                <span>Download PDF</span>
-              </button>
+                Download PDF
+              </Button>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setCountdown(null);
                     setCompletedSale(null);
                   }}
-                  className="flex-1 sm:flex-initial text-slate-500 hover:text-slate-800 text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors cursor-pointer text-center"
                 >
                   Stay on POS
-                </button>
+                </Button>
 
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handleGoToDashboard}
-                  className="flex-1 sm:flex-initial bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 px-5 rounded-xl transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
+                  rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
                 >
-                  <span>Go to Dashboard</span>
-                  {countdown !== null && (
-                    <span className="bg-blue-500/40 px-1.5 py-0.5 rounded text-[10px]">
-                      {countdown}s
-                    </span>
-                  )}
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                  Go to Dashboard {countdown !== null && `(${countdown}s)`}
+                </Button>
               </div>
             </div>
           </div>

@@ -10,14 +10,16 @@ import {
   Clock, 
   DollarSign,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Layers,
+  FileSpreadsheet
 } from 'lucide-react';
+import { Button } from '../ui/Button';
 
 export const Reports = () => {
   const { sales, inventory, medicines, batches, metrics } = usePharmacy();
   const [reportType, setReportType] = useState('sales'); // 'sales', 'inventory', 'velocity'
   
-  // Date filtering
   const [startDate, setStartDate] = useState(
     new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
   );
@@ -25,7 +27,6 @@ export const Reports = () => {
     new Date().toISOString().split('T')[0]
   );
 
-  // Filtered sales by date
   const filteredSales = useMemo(() => {
     return sales.filter(s => {
       const saleDate = s.created_at ? s.created_at.split('T')[0] : '';
@@ -35,7 +36,6 @@ export const Reports = () => {
 
   const totalFilteredSalesAmount = filteredSales.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
 
-  // Velocity analysis: Fast-moving vs slow-moving medicines
   const medicineVelocity = useMemo(() => {
     const counts = {};
     sales.forEach(s => {
@@ -54,7 +54,6 @@ export const Reports = () => {
     return list;
   }, [sales]);
 
-  // Export CSV
   const handleExportCsv = () => {
     let csvContent = 'data:text/csv;charset=utf-8,';
 
@@ -89,174 +88,142 @@ export const Reports = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 font-bold">
+            <span className="p-1.5 rounded-lg bg-blue-100 text-primary font-bold">
               <BarChart3 className="w-5 h-5" />
             </span>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
               Reports & Business Intelligence
             </h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Sales audit, stock valuation, inventory movements, and fast-vs-slow moving medicine velocity.
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Sales audit, stock valuation, and fast-vs-slow moving medicine velocity.
           </p>
         </div>
 
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleExportCsv}
-          className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition-all shadow-sm"
+          leftIcon={<Download className="w-3.5 h-3.5" />}
         >
-          <Download className="w-4 h-4 text-blue-400" />
-          <span>Export CSV</span>
-        </button>
+          Export CSV Report
+        </Button>
       </div>
 
-      {/* Report Type Tabs */}
-      <div className="flex border-b border-slate-200 gap-2">
-        {[
-          { id: 'sales', label: 'Sales Reports & Date Filter' },
-          { id: 'inventory', label: 'Inventory Valuation & Stock Status' },
-          { id: 'velocity', label: 'Medicine Velocity (Fast vs Slow Moving)' },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setReportType(t.id)}
-            className={`pb-3 px-4 text-xs font-bold transition-all border-b-2 ${
-              reportType === t.id
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* SALES TAB */}
-      {reportType === 'sales' && (
-        <div className="space-y-5">
-          {/* Date Range Selector */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="font-semibold text-slate-700">Custom Date Range:</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-800 font-mono"
-              />
-              <span className="text-slate-400">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-800 font-mono"
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-slate-500">Sales in Period:</span>
-              <span className="text-base font-extrabold text-blue-600 font-mono">
-                ₹{totalFilteredSalesAmount.toFixed(2)} ({filteredSales.length} bills)
-              </span>
-            </div>
-          </div>
-
-          {/* Sales Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4 font-semibold">Sale #</th>
-                    <th className="py-3 px-4 font-semibold">Date</th>
-                    <th className="py-3 px-4 font-semibold">Customer</th>
-                    <th className="py-3 px-4 font-semibold">Payment</th>
-                    <th className="py-3 px-4 font-semibold text-right">Subtotal</th>
-                    <th className="py-3 px-4 font-semibold text-right">Discount</th>
-                    <th className="py-3 px-4 font-semibold text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredSales.map((sale) => (
-                    <tr key={sale.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{sale.sale_number}</td>
-                      <td className="py-3.5 px-4 text-slate-500">{new Date(sale.created_at).toLocaleDateString('en-IN')}</td>
-                      <td className="py-3.5 px-4 font-medium text-slate-800">{sale.customer_name}</td>
-                      <td className="py-3.5 px-4 text-slate-600">{sale.payment_method}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-700 text-right">₹{Number(sale.subtotal).toFixed(2)}</td>
-                      <td className="py-3.5 px-4 font-mono text-emerald-600 text-right">-₹{Number(sale.discount_amount).toFixed(2)}</td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-right">₹{Number(sale.total_amount).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* Filter & Metric Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          {['sales', 'inventory', 'velocity'].map((type) => (
+            <button
+              key={type}
+              onClick={() => setReportType(type)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-xl border transition-colors capitalize cursor-pointer ${
+                reportType === type
+                  ? 'bg-primary text-white border-primary shadow-xs'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {type === 'velocity' ? 'Medicine Velocity' : `${type} Analysis`}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* INVENTORY TAB */}
-      {reportType === 'inventory' && (
+        {reportType === 'sales' && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-500 font-semibold">Date Range:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-primary"
+            />
+            <span className="text-slate-400">to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-primary"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Report Dynamic Content */}
+      {reportType === 'sales' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Stock Units</span>
-              <div className="text-2xl font-extrabold text-slate-900 mt-1">{metrics.totalStockPieces} pieces</div>
-              <p className="text-[11px] text-slate-400 mt-0.5">{metrics.totalMedicinesCount} unique medicines</p>
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Filtered Revenue</span>
+              <div className="text-2xl font-extrabold text-slate-900 font-mono mt-1">
+                ₹{totalFilteredSalesAmount.toFixed(2)}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Across {filteredSales.length} invoice(s)</p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Low Stock Threshold</span>
-              <div className="text-2xl font-extrabold text-amber-600 mt-1">{metrics.lowStockCount} items</div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Need restock order</p>
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Average Order Value</span>
+              <div className="text-2xl font-extrabold text-slate-900 font-mono mt-1">
+                ₹{filteredSales.length > 0 ? (totalFilteredSalesAmount / filteredSales.length).toFixed(2) : '0.00'}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Per completed customer bill</p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Expired Stock</span>
-              <div className="text-2xl font-extrabold text-rose-600 mt-1">{metrics.expiredCount} batches</div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Zero dispensing permission</p>
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-card">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Lifetime Turnover</span>
+              <div className="text-2xl font-extrabold text-emerald-600 font-mono mt-1">
+                ₹{Number(metrics?.totalSalesAmount || 0).toFixed(2)}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">Total revenue since registration</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* VELOCITY TAB */}
       {reportType === 'velocity' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-2 border-b border-slate-100">
-            Medicine Dispensing Velocity Analysis
-          </h2>
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-card p-6">
+          <h2 className="text-sm font-bold text-slate-900 mb-1">Fast-Moving vs Slow-Moving Medicines</h2>
+          <p className="text-xs text-slate-500 mb-6">Dispensary units sold across all completed sales transactions</p>
 
           <div className="space-y-3">
             {medicineVelocity.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No sales velocity recorded yet.</p>
+              <p className="text-xs text-slate-400 py-6 text-center">No sales recorded yet to compute medicine velocity.</p>
             ) : (
               medicineVelocity.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between text-xs p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs">
                   <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-[10px]">
-                      #{idx + 1}
+                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-xs">
+                      {idx + 1}
                     </span>
-                    <div>
-                      <span className="font-bold text-slate-900">{item.name}</span>
-                      <span className="text-[10px] text-slate-400 block">
-                        {idx === 0 ? 'Top High-Frequency Seller' : idx > 2 ? 'Slow-moving / Steady' : 'Fast-moving'}
-                      </span>
-                    </div>
+                    <span className="font-bold text-slate-900">{item.name}</span>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-extrabold text-slate-800">{item.piecesSold} pieces sold</span>
-                    {idx === 0 ? (
-                      <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                    ) : (
-                      <ArrowDownRight className="w-4 h-4 text-slate-400" />
-                    )}
+                  <div className="font-mono font-extrabold text-slate-800">
+                    {item.piecesSold} units sold
                   </div>
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {reportType === 'inventory' && (
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-card p-6">
+          <h2 className="text-sm font-bold text-slate-900 mb-1">Inventory Valuation Summary</h2>
+          <p className="text-xs text-slate-500 mb-6">Aggregate stock counts and retail inventory valuation</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Total Stock in Pieces</span>
+              <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                {(metrics?.totalStockPieces || 0).toLocaleString()} pieces
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Total Retail Valuation</span>
+              <div className="text-2xl font-black text-primary font-mono mt-1">
+                ₹{Number(metrics?.totalInventoryValue || 0).toFixed(2)}
+              </div>
+            </div>
           </div>
         </div>
       )}

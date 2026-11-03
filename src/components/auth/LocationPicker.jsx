@@ -5,13 +5,10 @@ import {
   Crosshair, 
   CheckCircle2, 
   AlertCircle, 
-  ChevronUp, 
-  ChevronDown, 
-  ChevronLeft, 
-  ChevronRight,
   Sparkles,
   Info
 } from 'lucide-react';
+import { Button } from '../ui/Button';
 
 const POPULAR_CITY_CENTERS = [
   { name: 'Bengaluru (Indiranagar)', lat: 12.9719, lng: 77.6412 },
@@ -26,7 +23,7 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
   const [lat, setLat] = useState(initialLat || 12.9719);
   const [lng, setLng] = useState(initialLng || 77.6412);
   const [locating, setLocating] = useState(false);
-  const [locationStatus, setLocationStatus] = useState(null); // 'detected', 'denied', 'manual'
+  const [locationStatus, setLocationStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
@@ -41,7 +38,6 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
     }
   }, [initialLat, initialLng]);
 
-  // Handle browser GPS detection
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       setErrorMessage('Geolocation is not supported by your browser. Defaulted to Bengaluru center.');
@@ -67,11 +63,10 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
           onLocationConfirmed({ latitude: detectedLat, longitude: detectedLng });
         }
       },
-      (err) => {
+      () => {
         setLocating(false);
         setLocationStatus('denied');
-        setErrorMessage('Location permission denied or unavailable. Defaulted to Bengaluru hub. Click on the map or choose a city below to adjust.');
-        // Auto-lock coordinates so user is NEVER blocked from saving
+        setErrorMessage('Location permission denied or unavailable. Defaulted to Bengaluru hub. Choose a city hub below or click the map.');
         setIsConfirmed(true);
         if (onLocationConfirmed) {
           onLocationConfirmed({ latitude: lat, longitude: lng });
@@ -81,277 +76,109 @@ export const LocationPicker = ({ initialLat, initialLng, onLocationConfirmed, is
     );
   };
 
-  // Click on interactive map canvas to drop pin
   const handleMapClick = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Convert relative click (0 to 1) into coordinate offset
-    const xRatio = (x / rect.width) - 0.5; // -0.5 to 0.5
+    const xRatio = (x / rect.width) - 0.5;
     const yRatio = (y / rect.height) - 0.5;
 
-    // Scale offset (roughly ~0.02 degrees range around current center)
     const newLat = Math.round((lat - yRatio * 0.04) * 1000000) / 1000000;
     const newLng = Math.round((lng + xRatio * 0.04) * 1000000) / 1000000;
 
     setLat(newLat);
     setLng(newLng);
     setIsConfirmed(true);
-    setLocationStatus('manual');
-    setErrorMessage(null);
     if (onLocationConfirmed) {
       onLocationConfirmed({ latitude: newLat, longitude: newLng });
     }
   };
 
-  // Nudge adjustment controls (~100m)
-  const handleNudge = (dLat, dLng) => {
-    const newLat = Math.round((lat + dLat) * 1000000) / 1000000;
-    const newLng = Math.round((lng + dLng) * 1000000) / 1000000;
-    setLat(newLat);
-    setLng(newLng);
+  const handleSelectCity = (city) => {
+    setLat(city.lat);
+    setLng(city.lng);
     setIsConfirmed(true);
     if (onLocationConfirmed) {
-      onLocationConfirmed({ latitude: newLat, longitude: newLng });
-    }
-  };
-
-  const handleConfirm = () => {
-    setIsConfirmed(true);
-    setErrorMessage(null);
-    if (onLocationConfirmed) {
-      onLocationConfirmed({
-        latitude: lat,
-        longitude: lng,
-      });
+      onLocationConfirmed({ latitude: city.lat, longitude: city.lng });
     }
   };
 
   return (
-    <div className="space-y-4 bg-slate-50 border border-slate-200 rounded-2xl p-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-200">
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-            <MapPin className="w-4 h-4 text-rose-500" />
-            <span>Step 3 — Physical Shop Location</span>
-          </h3>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Customers use this exact point to discover stock nearby and get driving directions.
-          </p>
-        </div>
-
-        {isConfirmed ? (
-          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Location Confirmed</span>
-          </span>
-        ) : (
-          <span className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-            <span>Confirmation Required</span>
-          </span>
-        )}
-      </div>
-
+    <div className="space-y-4">
       {errorMessage && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-3 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {locationStatus === 'detected' && !isConfirmed && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-3 rounded-xl flex items-center gap-2">
-          <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
-          <span>
-            Current GPS position detected. Please verify on the map and click <strong>Confirm Location</strong> below.
-          </span>
+      {/* Interactive Map Visual Simulation */}
+      <div className="relative rounded-2xl overflow-hidden border border-slate-300 shadow-inner bg-slate-900 h-64 cursor-crosshair group select-none" onClick={handleMapClick}>
+        {/* Map Grid Pattern */}
+        <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none" />
+
+        {/* Center Target & Pin */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="relative flex flex-col items-center">
+            <div className="w-9 h-9 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/50 animate-bounce">
+              <MapPin className="w-5 h-5 text-white" />
+            </div>
+            <span className="mt-1 px-2.5 py-0.5 rounded-md bg-slate-900/90 text-white font-mono text-[10px] font-bold border border-slate-700 shadow-md">
+              {lat.toFixed(4)}, {lng.toFixed(4)}
+            </span>
+          </div>
         </div>
-      )}
 
-      {/* Action Bar: Use Current Location & Preset Hubs */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleUseCurrentLocation}
-          disabled={locating}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-xs"
-        >
-          <Navigation className={`w-3.5 h-3.5 ${locating ? 'animate-spin' : ''}`} />
-          <span>{locating ? 'Detecting GPS...' : 'Use Current Location'}</span>
-        </button>
+        {/* Top Floating Map Controls */}
+        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+          <span className="text-[10px] font-semibold text-cyan-300 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700 backdrop-blur-sm">
+            Click anywhere on map to reposition pin
+          </span>
 
-        <span className="text-[11px] text-slate-400 font-medium">or select hub:</span>
-        <div className="flex flex-wrap gap-1">
+          <div className="pointer-events-auto">
+            <Button
+              variant="primary"
+              size="xs"
+              disabled={locating}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUseCurrentLocation();
+              }}
+              leftIcon={<Navigation className={`w-3.5 h-3.5 ${locating ? 'animate-spin' : ''}`} />}
+            >
+              {locating ? 'Locating...' : 'Use GPS'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Popular City Presets */}
+      <div>
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
+          Or Quick-Select City Hub:
+        </span>
+        <div className="flex flex-wrap gap-1.5">
           {POPULAR_CITY_CENTERS.map((city) => (
             <button
               key={city.name}
               type="button"
-              onClick={() => {
-                setLat(city.lat);
-                setLng(city.lng);
-                setIsConfirmed(true);
-                setLocationStatus('manual');
-                setErrorMessage(null);
-                if (onLocationConfirmed) {
-                  onLocationConfirmed({ latitude: city.lat, longitude: city.lng });
-                }
-              }}
-              className="px-2 py-1 text-[11px] font-semibold bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+              onClick={() => handleSelectCity(city)}
+              className="text-xs bg-slate-100 hover:bg-primary hover:text-white text-slate-700 px-3 py-1.5 rounded-xl transition-colors font-medium border border-slate-200 cursor-pointer"
             >
-              {city.name.split(' (')[0]}
+              {city.name}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Interactive Map Visualizer Canvas */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-          <span>Click on the map to place the pharmacy pin:</span>
-          <span>Target: <strong className="font-mono text-slate-800">{lat.toFixed(6)}, {lng.toFixed(6)}</strong></span>
-        </div>
-
-        <div
-          onClick={handleMapClick}
-          className="relative h-56 w-full rounded-2xl overflow-hidden cursor-crosshair border-2 border-slate-300 shadow-inner bg-slate-900 group select-none"
-          title="Click to reposition pharmacy pin"
-        >
-          {/* Faux Map Background Grid & Roads Pattern */}
-          <div className="absolute inset-0 opacity-20 pointer-events-none" style={{
-            backgroundImage: `radial-gradient(#38bdf8 1px, transparent 1px), linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px)`,
-            backgroundSize: `24px 24px, 48px 48px, 48px 48px`
-          }} />
-
-          {/* Map Landmarks Visuals */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-40 h-40 rounded-full border border-blue-500/20 bg-blue-500/5 animate-pulse" />
-          </div>
-
-          <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Interactive Map • 500m Local Radius</span>
-          </div>
-
-          {/* Centered Target Pin */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none flex flex-col items-center">
-            <div className={`px-2 py-0.5 rounded text-[10px] font-bold text-white shadow-md mb-1 whitespace-nowrap ${
-              isConfirmed ? 'bg-emerald-600' : 'bg-rose-600 animate-bounce'
-            }`}>
-              {isConfirmed ? '✓ Pharmacy Confirmed' : '📍 Unconfirmed Pin'}
-            </div>
-            <MapPin className={`w-8 h-8 drop-shadow-lg ${isConfirmed ? 'text-emerald-400' : 'text-rose-500'}`} />
-            <div className="w-2.5 h-1 bg-black/60 rounded-full blur-[1px] mt-[-2px]" />
-          </div>
-
-          <div className="absolute bottom-2 right-2 bg-slate-900/90 text-slate-300 text-[10px] px-2 py-0.5 rounded font-mono border border-slate-700">
-            Click anywhere to move pin
-          </div>
-        </div>
-      </div>
-
-      {/* Adjust Location & Direct Coordinate Inputs */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-        {/* Direct inputs */}
-        <div className="md:col-span-7 grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Latitude</label>
-            <input
-              type="number"
-              step="0.000001"
-              value={lat}
-              onChange={(e) => {
-                setLat(parseFloat(e.target.value) || 0);
-                setIsConfirmed(false);
-              }}
-              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">Longitude</label>
-            <input
-              type="number"
-              step="0.000001"
-              value={lng}
-              onChange={(e) => {
-                setLng(parseFloat(e.target.value) || 0);
-                setIsConfirmed(false);
-              }}
-              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl font-mono text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500"
-            />
-          </div>
-        </div>
-
-        {/* Nudge Adjust Pad */}
-        <div className="md:col-span-5 flex items-center justify-end gap-1.5">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mr-1">Nudge:</span>
-          <button
-            type="button"
-            onClick={() => handleNudge(0, -0.001)}
-            className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600"
-            title="Nudge West"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-          <div className="flex flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => handleNudge(0.001, 0)}
-              className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600"
-              title="Nudge North"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNudge(-0.001, 0)}
-              className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600"
-              title="Nudge South"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleNudge(0, 0.001)}
-            className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600"
-            title="Nudge East"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Confirm Location Button */}
-      <div className="pt-2 flex items-center justify-between border-t border-slate-200">
-        <span className="text-xs text-slate-500">
-          {isConfirmed ? (
-            <span className="text-emerald-700 font-semibold flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Location verified and locked</span>
-            </span>
-          ) : (
-            <span className="text-amber-700 font-medium flex items-center gap-1">
-              <AlertCircle className="w-3.5 h-3.5" />
-              <span>Click confirm below to lock this location</span>
-            </span>
-          )}
+      {/* Confirmation Status */}
+      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
+        <span className="flex items-center gap-1.5 font-semibold">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>Coordinates locked: {lat.toFixed(6)}, {lng.toFixed(6)}</span>
         </span>
-
-        <button
-          type="button"
-          onClick={handleConfirm}
-          className={`text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all shadow-sm ${
-            isConfirmed
-              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              : 'bg-slate-900 hover:bg-slate-800 text-white'
-          }`}
-        >
-          <CheckCircle2 className="w-4 h-4" />
-          <span>{isConfirmed ? 'Re-Confirm Location' : 'Confirm Shop Location'}</span>
-        </button>
+        <span className="text-[10px] uppercase font-mono font-bold">Radar Linked</span>
       </div>
     </div>
   );
