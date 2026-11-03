@@ -25,7 +25,9 @@ import {
   ShieldCheck,
   User,
   ChevronRight,
-  Bell
+  Bell,
+  MessageSquare,
+  BookOpen
 } from 'lucide-react';
 
 export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, children }) => {
@@ -38,6 +40,8 @@ export const PharmacistLayout = ({ activeTab, setActiveTab, onSwitchToCustomer, 
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'pos', label: 'Point of Sale (POS)', icon: ShoppingCart, highlight: true },
     { id: 'inventory', label: 'Inventory & Strips', icon: Package },
+    { id: 'ai-chat', label: 'AI Chat Assistant', icon: MessageSquare, badge: 'Gemma 4' },
+    { id: 'knowledge-base', label: 'Knowledge Base', icon: BookOpen },
     { id: 'ai-scanner', label: 'Scan Medicine (AI)', icon: Camera, badge: 'Gemma 4' },
     { id: 'add-stock', label: 'Add Stock', icon: PlusCircle },
     { id: 'expiry', label: 'FEFO & Expiry', icon: Clock, alertCount: ((metrics?.expiringSoonCount || 0) + (metrics?.expiredCount || 0)) },

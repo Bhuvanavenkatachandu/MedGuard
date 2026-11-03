@@ -142,3 +142,24 @@ def get_current_pharmacy(
             detail="No pharmacy registered for current user. Please complete pharmacy setup.",
         )
     return pharmacy
+
+
+def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    FastAPI dependency: Returns the authenticated User if a valid Bearer token
+    is supplied, or None for guest/anonymous requests (such as customer storefront chat).
+    """
+    if not token:
+        return None
+    try:
+        payload = decode_access_token(token)
+        user_id: Optional[str] = payload.get("sub")
+        if not user_id:
+            return None
+        return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    except Exception:
+        return None
+

@@ -19,6 +19,8 @@ import { SupplierManagement } from './components/suppliers/SupplierManagement';
 import { InvoiceList } from './components/invoices/InvoiceList';
 import { Reports } from './components/reports/Reports';
 import { StockMovements } from './components/movements/StockMovements';
+import { PharmacistChat } from './components/chat/PharmacistChat';
+import { KnowledgeBase } from './components/knowledge/KnowledgeBase';
 
 /**
  * Pharmacist Portal Shell
@@ -53,6 +55,14 @@ const PharmacistPortal = ({ activeTab }) => {
 
       {activeTab === 'inventory' && (
         <InventoryList setActiveTab={handleTabChange} />
+      )}
+
+      {activeTab === 'ai-chat' && (
+        <PharmacistChat />
+      )}
+
+      {activeTab === 'knowledge-base' && (
+        <KnowledgeBase />
       )}
 
       {activeTab === 'ai-scanner' && (
@@ -145,6 +155,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <PharmacistPortal activeTab="inventory" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/ai-chat"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="ai-chat" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pharmacist/knowledge-base"
+            element={
+              <ProtectedRoute>
+                <PharmacistPortal activeTab="knowledge-base" />
               </ProtectedRoute>
             }
           />

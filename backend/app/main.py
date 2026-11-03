@@ -28,6 +28,8 @@ from backend.app.routers import (
     ai,
     reports,
     public,
+    knowledge,
+    chat,
 )
 
 from sqlalchemy import text
@@ -90,6 +92,8 @@ app.include_router(movements.router)
 app.include_router(ai.router)
 app.include_router(reports.router)
 app.include_router(public.router)
+app.include_router(knowledge.router)
+app.include_router(chat.router)
 
 # Mount Frontend Built SPA (dist/)
 dist_path = Path(__file__).resolve().parent.parent.parent / "dist"

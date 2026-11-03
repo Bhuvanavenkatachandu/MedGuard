@@ -11,6 +11,10 @@ from backend.app.models.ai_scan import AIScan
 from backend.app.models.search_session import SearchSession
 from backend.app.models.stock_movement import StockMovement
 from backend.app.models.email_log import EmailLog
+from backend.app.models.knowledge_document import KnowledgeDocument
+from backend.app.models.knowledge_chunk import KnowledgeChunk
+from backend.app.models.chat_session import ChatSession
+from backend.app.models.chat_message import ChatMessage
 
 __all__ = [
     "User",
@@ -27,4 +31,8 @@ __all__ = [
     "SearchSession",
     "StockMovement",
     "EmailLog",
+    "KnowledgeDocument",
+    "KnowledgeChunk",
+    "ChatSession",
+    "ChatMessage",
 ]

@@ -40,6 +40,20 @@ from backend.app.schemas.sale import (
 from backend.app.schemas.invoice import InvoiceOut
 from backend.app.schemas.ai import AIScanRequest, AIScanResponse, ExtractedMedicineData
 from backend.app.schemas.public import PublicMedicineSearchItem
+from backend.app.schemas.knowledge import (
+    KnowledgeDocumentCreate,
+    KnowledgeDocumentUpdate,
+    KnowledgeDocumentOut,
+    KnowledgeChunkOut,
+)
+from backend.app.schemas.chat import (
+    ChatMessageOut,
+    ChatSessionCreate,
+    ChatSessionOut,
+    ChatSessionDetailOut,
+    ChatQueryRequest,
+    ChatQueryResponse,
+)
 
 __all__ = [
     "UserRegisterRequest",
@@ -70,4 +84,14 @@ __all__ = [
     "AIScanResponse",
     "ExtractedMedicineData",
     "PublicMedicineSearchItem",
+    "KnowledgeDocumentCreate",
+    "KnowledgeDocumentUpdate",
+    "KnowledgeDocumentOut",
+    "KnowledgeChunkOut",
+    "ChatMessageOut",
+    "ChatSessionCreate",
+    "ChatSessionOut",
+    "ChatSessionDetailOut",
+    "ChatQueryRequest",
+    "ChatQueryResponse",
 ]

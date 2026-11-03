@@ -18,8 +18,11 @@ import {
   X,
   Compass,
   ArrowUpDown,
-  Clock
+  Clock,
+  Bot,
+  MessageSquare
 } from 'lucide-react';
+import { CustomerChatModal } from '../chat/CustomerChatModal';
 import { calculateDistanceKm, getGoogleMapsDirectionsUrl } from '../../utils/geoUtils';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { publicApi } from '../../api/publicApi';
@@ -49,6 +52,7 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [selectedPharmacyModal, setSelectedPharmacyModal] = useState(null);
+  const [chatPharmacy, setChatPharmacy] = useState(null);
   
   // Temporary secure Search Session ID
   const [searchSessionId, setSearchSessionId] = useState('');
@@ -516,6 +520,15 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
                     </a>
 
                     <button
+                      onClick={() => setChatPharmacy(item.pharmacy)}
+                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-emerald-200/60"
+                      title="Chat with Pharmacy AI Assistant"
+                    >
+                      <Bot className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="hidden sm:inline">Ask AI</span>
+                    </button>
+
+                    <button
                       onClick={() => setSelectedPharmacyModal(item)}
                       className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold py-2.5 px-3 rounded-xl transition-colors"
                       title="View Details"
@@ -554,7 +567,19 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
               </div>
             </div>
 
-            <div className="pt-2 flex gap-2">
+            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setChatPharmacy(selectedPharmacyModal.pharmacy);
+                  setSelectedPharmacyModal(null);
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Chat with AI Assistant</span>
+              </button>
+
               <a
                 href={selectedPharmacyModal.directionsUrl || getGoogleMapsDirectionsUrl(
                   selectedPharmacyModal.pharmacy.latitude,
@@ -566,7 +591,7 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
                 className="flex-1 bg-primary hover:bg-primary-dark text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs"
               >
                 <Navigation className="w-3.5 h-3.5" />
-                <span>Navigate via Google Maps</span>
+                <span>Navigate Maps</span>
               </a>
               <Button
                 variant="outline"
@@ -579,6 +604,13 @@ export const CustomerDiscovery = ({ onSwitchToPharmacist }) => {
           </div>
         </Modal>
       )}
+
+      {/* Customer Pharmacy Chat Modal */}
+      <CustomerChatModal
+        pharmacy={chatPharmacy}
+        isOpen={Boolean(chatPharmacy)}
+        onClose={() => setChatPharmacy(null)}
+      />
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-6 px-4 text-center text-xs text-slate-500 mt-auto">

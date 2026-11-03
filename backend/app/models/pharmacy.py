@@ -36,3 +36,5 @@ class Pharmacy(Base):
     stock_movements = relationship("StockMovement", back_populates="pharmacy", cascade="all, delete-orphan")
     ai_scans = relationship("AIScan", back_populates="pharmacy", cascade="all, delete-orphan")
     email_logs = relationship("EmailLog", back_populates="pharmacy", cascade="all, delete-orphan")
+    knowledge_documents = relationship("KnowledgeDocument", back_populates="pharmacy", cascade="all, delete-orphan")
+    chat_sessions = relationship("ChatSession", back_populates="pharmacy", cascade="all, delete-orphan")
