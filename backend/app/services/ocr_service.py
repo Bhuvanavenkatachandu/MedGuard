@@ -264,8 +264,13 @@ class OCRService:
         for line_info in lines:
             m = batch_regex.search(line_info["text"])
             if m:
-                extracted["batch_number"] = m.group(1).strip()
-                confidences["batch_number"] = line_info["confidence"]
+                matched_val = m.group(1).strip()
+                extracted["batch_number"] = matched_val
+                val_tokens = [
+                    t["confidence"] for t in line_info["words"]
+                    if matched_val.lower() in t["text"].lower() or t["text"].lower() in matched_val.lower()
+                ]
+                confidences["batch_number"] = round(sum(val_tokens) / len(val_tokens), 1) if val_tokens else line_info["confidence"]
                 break
 
         # If not found via prefix, search tokens for common batch-like patterns near keywords
@@ -292,7 +297,11 @@ class OCRService:
                 candidate = m.group(1).strip(":#-./ ")
                 if re.search(r"\d", candidate):  # must contain at least a digit
                     extracted["expiry_date"] = candidate
-                    confidences["expiry_date"] = line_info["confidence"]
+                    val_tokens = [
+                        t["confidence"] for t in line_info["words"]
+                        if candidate.lower() in t["text"].lower() or any(p in t["text"].lower() for p in candidate.lower().split("/"))
+                    ]
+                    confidences["expiry_date"] = round(sum(val_tokens) / len(val_tokens), 1) if val_tokens else line_info["confidence"]
                     break
 
         # If expiry date not found via label, search for date-formatted strings near 'exp'
@@ -324,7 +333,11 @@ class OCRService:
                 candidate = m.group(1).strip(":#-./ ")
                 if re.search(r"\d", candidate):
                     extracted["manufacturing_date"] = candidate
-                    confidences["manufacturing_date"] = line_info["confidence"]
+                    val_tokens = [
+                        t["confidence"] for t in line_info["words"]
+                        if candidate.lower() in t["text"].lower() or any(p in t["text"].lower() for p in candidate.lower().split("/"))
+                    ]
+                    confidences["manufacturing_date"] = round(sum(val_tokens) / len(val_tokens), 1) if val_tokens else line_info["confidence"]
                     break
 
         # 5. Quantity (pieces or count)

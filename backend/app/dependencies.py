@@ -68,6 +68,11 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session 
     return user
 
 def get_current_pharmacy(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Pharmacy:
+    if current_user.role not in ["pharmacist", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Only pharmacists can access pharmacy administrative operations.",
+        )
     pharmacy = db.query(Pharmacy).filter(Pharmacy.owner_user_id == current_user.id).first()
     if not pharmacy:
         raise HTTPException(

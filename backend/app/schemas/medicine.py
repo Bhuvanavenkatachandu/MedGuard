@@ -12,6 +12,16 @@ class MedicineCreateRequest(BaseModel):
     pieces_per_strip: Optional[int] = 10
     unit_of_measure: Optional[str] = "tablet"
 
+class MedicineUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    generic_name: Optional[str] = None
+    brand: Optional[str] = None
+    strength: Optional[str] = None
+    category: Optional[str] = None
+    manufacturer: Optional[str] = None
+    pieces_per_strip: Optional[int] = None
+    unit_of_measure: Optional[str] = None
+
 class MedicineOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

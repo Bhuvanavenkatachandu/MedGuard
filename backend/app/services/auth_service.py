@@ -93,3 +93,19 @@ def get_user_out(db: Session, user: User) -> UserOut:
         is_verified=user.is_verified,
         pharmacy_id=pharmacy.id if pharmacy else None,
     )
+
+def refresh_token(db: Session, user: User) -> TokenResponse:
+    pharmacy = db.query(Pharmacy).filter(Pharmacy.owner_user_id == user.id).first()
+    pharmacy_id = pharmacy.id if pharmacy else None
+    access_token = create_access_token(data={"sub": user.id, "email": user.email})
+    user_out = UserOut(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        phone=user.phone,
+        role=user.role,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        pharmacy_id=pharmacy_id,
+    )
+    return TokenResponse(access_token=access_token, user=user_out)

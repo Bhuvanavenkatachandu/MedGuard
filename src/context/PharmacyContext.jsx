@@ -313,6 +313,40 @@ export const PharmacyProvider = ({ children }) => {
     }
   };
 
+  // Medicine Management
+  const addMedicine = async (medData) => {
+    try {
+      const result = await medicinesApi.createMedicine(medData);
+      await fetchPharmacyData();
+      return result;
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to add medicine';
+      throw new Error(msg);
+    }
+  };
+
+  const updateMedicine = async (id, medData) => {
+    try {
+      const result = await medicinesApi.updateMedicine(id, medData);
+      await fetchPharmacyData();
+      return result;
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to update medicine';
+      throw new Error(msg);
+    }
+  };
+
+  const deleteMedicine = async (id) => {
+    try {
+      const result = await medicinesApi.deleteMedicine(id);
+      await fetchPharmacyData();
+      return result;
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to delete medicine';
+      throw new Error(msg);
+    }
+  };
+
   // Create Supplier
   const addSupplier = async (supplierData) => {
     try {
@@ -480,6 +514,9 @@ export const PharmacyProvider = ({ children }) => {
     resendVerificationEmail,
     logoutPharmacist,
     setupPharmacy,
+    addMedicine,
+    updateMedicine,
+    deleteMedicine,
     addStock,
     adjustStock,
     deleteInventoryItem,

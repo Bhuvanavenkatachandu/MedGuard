@@ -201,6 +201,41 @@ export const PointOfSale = ({ onSaleComplete }) => {
     setCartItems(cartItems.filter((_, idx) => idx !== index));
   };
 
+  const handleUpdateCartItemQty = (index, newQty) => {
+    const item = cartItems[index];
+    if (!item) return;
+    const inv = inventory.find(i => i.batch_id === item.batch_id);
+    const maxPieces = inv?.total_pieces || 0;
+    const piecesPerStrip = item.pieces_per_strip || 10;
+
+    const parsedQty = parseInt(newQty, 10);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
+      handleRemoveFromCart(index);
+      return;
+    }
+
+    const piecesReq = item.unit_type === 'strip' ? parsedQty * piecesPerStrip : parsedQty;
+    const otherPieces = cartItems
+      .filter((it, idx) => idx !== index && it.batch_id === item.batch_id)
+      .reduce((acc, it) => acc + it.pieces_count, 0);
+
+    if (otherPieces + piecesReq > maxPieces) {
+      setErrorMessage(`Cannot exceed available stock of ${maxPieces} pieces for batch ${item.batch_number}.`);
+      return;
+    }
+
+    setErrorMessage(null);
+    setCartItems(cartItems.map((it, idx) => {
+      if (idx !== index) return it;
+      return {
+        ...it,
+        quantity_units: parsedQty,
+        pieces_count: piecesReq,
+        total_price: Math.round(it.unit_price * parsedQty * 100) / 100,
+      };
+    }));
+  };
+
   const subtotal = cartItems.reduce((acc, item) => acc + item.total_price, 0);
   const discountAmount = (subtotal * (parseFloat(discountPercent) || 0)) / 100;
   const taxableAmount = Math.max(0, subtotal - discountAmount);
@@ -629,21 +664,49 @@ export const PointOfSale = ({ onSaleComplete }) => {
                   </div>
                 ) : (
                   cartItems.map((item, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900">{item.medicine_name}</div>
+                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-slate-900 truncate">{item.medicine_name}</div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          Batch: {item.batch_number} • {item.quantity_units} {item.unit_type}(s) ({item.pieces_count} pcs)
+                          Batch: {item.batch_number} • {item.pieces_count} pcs total
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-slate-900 font-mono">
+                      {/* Quantity Controls */}
+                      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCartItemQty(idx, item.quantity_units - 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 transition-colors"
+                          title="Decrease quantity"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity_units}
+                          onChange={(e) => handleUpdateCartItemQty(idx, e.target.value)}
+                          className="w-8 text-center text-xs font-mono font-bold bg-transparent border-0 focus:outline-none focus:ring-0 p-0 text-slate-900"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateCartItemQty(idx, item.quantity_units + 1)}
+                          className="w-5 h-5 flex items-center justify-center rounded bg-white text-slate-700 hover:bg-slate-200 transition-colors"
+                          title="Increase quantity"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 font-mono text-right min-w-[50px]">
                           ₹{item.total_price.toFixed(2)}
                         </span>
                         <button
                           onClick={() => handleRemoveFromCart(idx)}
                           className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          title="Remove item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
